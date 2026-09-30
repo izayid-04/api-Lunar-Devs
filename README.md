@@ -58,7 +58,7 @@ pnpm run start
 
 # build + démarrage "à la Passenger" (identique à ce que fait Hodifly)
 pnpm run build
-node server.js
+node -e "require('./server.cjs')"
 ```
 
 Une fois lancé, vérifier que tout fonctionne :
@@ -100,7 +100,8 @@ secret :
 
 Le déploiement se fait via Hodifly (intégré au cPanel HODI) : un push sur
 GitHub déclenche un build (`npm run build`) puis un lancement automatique
-via Passenger (`server.js` à la racine). La configuration complète
+via Passenger (`server.cjs` à la racine — voir §7 "Piège Passenger + ESM"
+de la doc de déploiement). La configuration complète
 (paramètres Hodifly, variables d'environnement, CORS, stockage persistant,
 procédure de test) est documentée dans
 [`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md).
@@ -114,7 +115,7 @@ src/
   health.controller.ts   # route GET /health
   app.controller.ts      # route GET / (placeholder)
   app.service.ts
-server.js                 # point d'entrée Passenger, charge dist/main.js
+server.cjs                 # point d'entrée Passenger (CommonJS), charge dist/main.js
 docs/DEPLOIEMENT.md        # documentation d'hébergement et de déploiement
 .env.example                # variables d'environnement attendues
 ```
