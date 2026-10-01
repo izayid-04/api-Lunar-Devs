@@ -124,7 +124,8 @@ aussi, mais ne détecterait pas un problème de compatibilité `require()`).
 Vérifier que `/health` répond `status: "ok"` et que `nodeVersion` /
 `appName` correspondent à l'environnement local (`APP_NAME` peut être
 défini via un `.env` copié depuis `.env.example`, ou en variable
-d'environnement inline).
+d'environnement inline). Voir §6 pour tester en plus `/health/db` avec un
+MySQL local (Docker).
 
 ### Après déploiement sur Hodifly
 
@@ -142,6 +143,160 @@ d'environnement inline).
    correspond à Node 24.
 5. Depuis le front déployé, faire un appel `fetch` vers `/health` et
    vérifier dans la console navigateur qu'aucune erreur CORS n'apparaît.
+
+## 6. Base de données MySQL (TypeORM)
+
+### Pourquoi ces choix
+
+- **MySQL** (pas PostgreSQL) sur `localhost:3306`, base `lunardevs_app`,
+  utilisateur `lunardevs_api` — c'est l'infrastructure fournie côté cPanel.
+- Pilote **`mysql2`** (100% JavaScript, aucun code natif à compiler) : le
+  serveur tourne sous **glibc 2.28**, trop ancienne pour la plupart des
+  paquets avec des bindings natifs (ex. le driver `mysql` historique, ou
+  certains drivers Postgres natifs). `mysql2` évite tout risque
+  d'incompatibilité au déploiement.
+- **Variables séparées** (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
+  `DB_PASSWORD`) plutôt qu'une URL de connexion unique : un mot de passe
+  contenant des caractères spéciaux (`@`, `:`, `/`, `#`...) casse le
+  parsing d'une URL s'il n'est pas correctement encodé. Des variables
+  séparées éliminent ce problème.
+- **`synchronize: false`** : TypeORM ne modifie jamais le schéma tout
+  seul en se basant sur les entités — seules les migrations explicites
+  changent la base. Indispensable dès qu'on touche à une vraie base
+  partagée.
+- **`migrationsRun: true`** : comme il n'y a **pas d'accès SSH** pour
+  lancer `typeorm migration:run` à la main sur le serveur, les migrations
+  en attente s'exécutent **automatiquement à chaque démarrage de
+  l'application** (donc à chaque déploiement Hodifly, puisque Passenger
+  redémarre le process). C'est la seule façon de faire évoluer le schéma
+  en production dans ce contexte.
+
+### Résilience : la base ne doit jamais empêcher l'app de démarrer
+
+`TypeOrmModule.forRoot()` est configuré avec `manualInitialization: true`
+(voir `src/app.module.ts`) : Nest enregistre le `DataSource` sans tenter
+de se connecter pendant le démarrage du module. C'est `src/main.ts` qui
+appelle ensuite `dataSource.initialize()` explicitement, dans un
+`try/catch` :
+
+- Si la connexion réussit → les migrations en attente s'appliquent
+  (`migrationsRun: true`), et `GET /health/db` fonctionne.
+- Si la connexion échoue (base indisponible, identifiants invalides,
+  etc.) → l'erreur est journalisée côté serveur, **mais l'application
+  démarre quand même** et continue de répondre sur `GET /health` (qui ne
+  dépend jamais de la base). `GET /health/db` répondra alors `503` avec
+  un message générique tant que la base reste injoignable.
+
+Sans ce découpage, une base de données temporairement indisponible au
+moment précis du déploiement ferait planter tout le process Node — donc
+toute l'API, y compris la route de santé de base.
+
+### Variables d'environnement à saisir dans Hodifly
+
+En plus de `PORT`, `FRONT_URL`, `APP_NAME` (voir §2) :
+
+| Variable      | Valeur (production)  |
+| ------------- | --------------------- |
+| `DB_HOST`     | `localhost`            |
+| `DB_PORT`     | `3306`                 |
+| `DB_NAME`     | `lunardevs_app`        |
+| `DB_USER`     | `lunardevs_api`        |
+| `DB_PASSWORD` | (mot de passe réel, saisi uniquement dans Hodifly — jamais dans Git) |
+
+### Entité et migration de test
+
+- `src/database/entities/health-check.entity.ts` — entité `HealthCheck`
+  (table `health_check`) : `id` auto-incrémenté, `createdAt`.
+- `src/database/migrations/` — une migration qui crée la table
+  `health_check`. Compilée automatiquement par `nest build` vers
+  `dist/database/migrations/`, d'où `migrationsRun: true` l'applique au
+  démarrage.
+- `src/database/data-source.ts` — config de connexion partagée entre le
+  CLI TypeORM (migrations) et l'app Nest (`src/app.module.ts`), pour
+  n'avoir qu'un seul endroit à modifier.
+
+Pour ajouter une future migration (plus tard, une fois le hackathon
+lancé) :
+
+```bash
+pnpm run migration:generate src/database/migrations/NomDeLaMigration
+pnpm run migration:run        # applique localement, optionnel (l'app le fait aussi au démarrage)
+pnpm run migration:revert     # annule la dernière migration si besoin
+```
+
+### Route `GET /health/db`
+
+Insère une ligne dans `health_check`, puis renvoie le nombre total de
+lignes et la date de la dernière — pour prouver que l'app écrit et lit
+bien dans MySQL de bout en bout :
+
+```json
+{
+  "status": "ok",
+  "totalRows": 3,
+  "lastCreatedAt": "2026-10-03T12:00:00.000Z"
+}
+```
+
+En cas d'échec (base injoignable, erreur de requête), réponse `503` :
+
+```json
+{
+  "status": "error",
+  "message": "Database unavailable"
+}
+```
+
+Aucun identifiant, mot de passe ou détail d'erreur brut n'est jamais
+renvoyé au client — seuls des messages génériques. Les erreurs détaillées
+restent dans les logs serveur.
+
+> ⚠️ Chaque appel à `/health/db` insère une ligne. Pratique pour un test
+> ponctuel, à éviter en boucle/monitoring automatisé répété — l'espace
+> disque est limité et partagé entre équipes (voir §1).
+
+### Tester en local avec un MySQL dans Docker
+
+Le plus simple, sans rien installer sur la machine :
+
+```bash
+docker run -d --name lunardevs-mysql-test \
+  -e MYSQL_ROOT_PASSWORD=rootpass \
+  -e MYSQL_DATABASE=lunardevs_app \
+  -e MYSQL_USER=lunardevs_api \
+  -e MYSQL_PASSWORD=apipass \
+  -p 3307:3306 \
+  mysql:8.0
+```
+
+(port hôte `3307` pour ne pas entrer en conflit avec un éventuel MySQL
+déjà installé localement sur le port 3306 par défaut — adapter si besoin).
+
+Puis dans `.env` (copié depuis `.env.example`) :
+
+```
+DB_HOST=127.0.0.1
+DB_PORT=3307
+DB_NAME=lunardevs_app
+DB_USER=lunardevs_api
+DB_PASSWORD=apipass
+```
+
+Ensuite, procédure habituelle (voir §5) :
+
+```bash
+pnpm install
+pnpm run build
+node -e "require('./server.cjs')"
+curl http://localhost:3000/health       # doit répondre, indépendamment de la base
+curl http://localhost:3000/health/db    # doit insérer une ligne et répondre "ok"
+```
+
+Pour arrêter/supprimer le conteneur de test une fois fini :
+
+```bash
+docker stop lunardevs-mysql-test && docker rm lunardevs-mysql-test
+```
 
 ## 7. Piège Passenger + ESM
 

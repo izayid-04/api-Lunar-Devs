@@ -14,6 +14,8 @@ Comores** (3-4 octobre 2026).
 - [NestJS](https://nestjs.com) (TypeScript, ESM)
 - [pnpm](https://pnpm.io) pour la gestion des dépendances
 - [Vitest](https://vitest.dev) pour les tests unitaires et e2e
+- [TypeORM](https://typeorm.io) + [`mysql2`](https://github.com/sidorares/node-mysql2)
+  (pilote 100% JS, pas de code natif) pour MySQL
 - Hébergement : cPanel HODI via **Hodifly** (Passenger), voir
   [`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md)
 
@@ -42,10 +44,12 @@ cp .env.example .env
 | `PORT`      | Port d'écoute HTTP (géré automatiquement par Passenger en prod) | Non — défaut `3000` |
 | `FRONT_URL` | Origine(s) autorisée(s) en CORS (front Next.js), séparées par des virgules si plusieurs | Recommandé en prod |
 | `APP_NAME`  | Nom applicatif, exposé par `/health` pour vérifier que les variables Hodifly sont bien lues | Non |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connexion MySQL, en variables séparées (pas d'URL, pour éviter les soucis d'encodage du mot de passe) | Oui, pour que `/health/db` fonctionne |
 
 En production (Hodifly), ces variables se définissent dans l'interface
 Hodifly, pas dans un fichier `.env` — voir
-[`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md) pour le détail.
+[`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md) pour le détail, y compris
+comment lancer un MySQL local avec Docker pour tester.
 
 ## Lancer le projet
 
@@ -96,6 +100,27 @@ secret :
 }
 ```
 
+`GET /health/db` vérifie en plus la base MySQL : insère une ligne dans
+`health_check`, puis renvoie le nombre total de lignes et la date de la
+dernière. Cette route répond `503` avec un message générique si la base
+est indisponible — mais `GET /health` continue de fonctionner dans tous
+les cas, puisqu'elle ne dépend jamais de la base. Voir §6 de
+[`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md) pour le détail et comment
+tester en local avec un MySQL Docker.
+
+## Migrations
+
+Le schéma est géré uniquement par migrations TypeORM (`synchronize:
+false`). Comme il n'y a pas d'accès SSH sur Hodifly, elles s'appliquent
+automatiquement à chaque démarrage de l'app (`migrationsRun: true`). Pour
+en créer une nouvelle en développement :
+
+```bash
+pnpm run migration:generate src/database/migrations/NomDeLaMigration
+pnpm run migration:run        # optionnel : les applique localement tout de suite
+pnpm run migration:revert     # annule la dernière si besoin
+```
+
 ## Déploiement
 
 Le déploiement se fait via Hodifly (intégré au cPanel HODI) : un push sur
@@ -110,11 +135,15 @@ procédure de test) est documentée dans
 
 ```
 src/
-  main.ts               # bootstrap Nest, CORS, port
-  app.module.ts          # module racine
-  health.controller.ts   # route GET /health
-  app.controller.ts      # route GET / (placeholder)
+  main.ts                           # bootstrap Nest, CORS, port, connexion DB manuelle
+  app.module.ts                      # module racine, config TypeORM
+  health.controller.ts               # routes GET /health et GET /health/db
+  app.controller.ts                  # route GET / (placeholder)
   app.service.ts
+  database/
+    data-source.ts                   # config MySQL partagée (app + CLI TypeORM)
+    entities/health-check.entity.ts  # entité de test HealthCheck
+    migrations/                      # migrations TypeORM (exécutées auto au démarrage)
 server.cjs                 # point d'entrée Passenger (CommonJS), charge dist/main.js
 docs/DEPLOIEMENT.md        # documentation d'hébergement et de déploiement
 .env.example                # variables d'environnement attendues
