@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLog } from './entities/audit-log.entity.js';
 import { User } from '../users/entities/user.entity.js';
+import { UserRole } from '../users/user-role.enum.js';
 import { ListAuditLogsQueryDto } from './dto/list-audit-logs-query.dto.js';
+import { maskEmail, maskIp } from '../common/masking.util.js';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 
 export interface LogActionParams {
   action: string;
@@ -39,7 +42,7 @@ export class AuditService {
     return this.auditRepository.save(entry);
   }
 
-  async findAll(query: ListAuditLogsQueryDto) {
+  async findAll(query: ListAuditLogsQueryDto, currentUser?: AuthenticatedUser) {
     const qb = this.auditRepository
       .createQueryBuilder('log')
       .leftJoinAndSelect('log.author', 'author')
@@ -63,6 +66,8 @@ export class AuditService {
 
     const [items, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
+    const isAgent = currentUser && currentUser.role === UserRole.AGENT;
+
     return {
       items: items.map((item) => ({
         id: item.id,
@@ -70,14 +75,14 @@ export class AuditService {
         entityType: item.entityType,
         entityId: item.entityId,
         details: item.details,
-        ipAddress: item.ipAddress,
+        ipAddress: isAgent ? maskIp(item.ipAddress) : item.ipAddress,
         createdAt: item.createdAt,
         author: item.author
           ? {
               id: item.author.id,
               firstName: item.author.firstName,
               lastName: item.author.lastName,
-              email: item.author.email,
+              email: isAgent ? maskEmail(item.author.email) : item.author.email,
               role: item.author.role,
             }
           : null,

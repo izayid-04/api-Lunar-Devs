@@ -23,7 +23,7 @@ export class Partner {
   @Column({ type: 'varchar', length: 100 })
   district!: string;
 
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 255, name: 'opening_hours' })
   openingHours!: string;
 
   @Column({ type: 'varchar', length: 255 })

@@ -18,6 +18,12 @@ import { AuditLog } from '../audit/entities/audit-log.entity.js';
 import { TransportLine } from '../transports/entities/transport-line.entity.js';
 import { PrivacyInquiry } from '../privacy/entities/privacy-inquiry.entity.js';
 import { KnownDevice } from '../auth/entities/known-device.entity.js';
+import { Project } from '../participation/entities/project.entity.js';
+import { Consultation } from '../participation/entities/consultation.entity.js';
+import { ConsultationResponse } from '../participation/entities/consultation-response.entity.js';
+import { Idea } from '../participation/entities/idea.entity.js';
+import { ServiceFeedback } from '../service-feedback/entities/service-feedback.entity.js';
+import { Partner } from '../partners/entities/partner.entity.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -51,6 +57,12 @@ export const dataSourceOptions: DataSourceOptions = {
     TransportLine,
     PrivacyInquiry,
     KnownDevice,
+    Project,
+    Consultation,
+    ConsultationResponse,
+    Idea,
+    ServiceFeedback,
+    Partner,
   ],
   migrations: [join(currentDir, 'migrations', '*{.ts,.js}')],
   synchronize: false,

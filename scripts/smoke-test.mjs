@@ -278,10 +278,18 @@ async function run() {
   const rAdminPingAgent = await request('/admin/ping', { headers: authH(agentToken) });
   record('GET /admin/ping', 'agent refusé (403)', 403, rAdminPingAgent.status);
 
-  // 5. Gestion des Citoyens (F34)
-  console.log(`\n--- Gestion des Citoyens (F34) ---`);
+  // 5. Gestion des Citoyens (F34, F70)
+  console.log(`\n--- Gestion des Citoyens (F34, F70) ---`);
   const rCitizens = await request('/agent/citizens', { headers: authH(agentToken) });
   record('GET /agent/citizens', 'agent autorisé (200)', 200, rCitizens.status);
+  const firstCitizen = rCitizens.data?.data?.[0];
+  const isEmailMaskedForAgent = firstCitizen && typeof firstCitizen.email === 'string' && firstCitizen.email.includes('***@');
+  record('GET /agent/citizens', 'email citoyen masqué pour agent (F70)', true, Boolean(isEmailMaskedForAgent));
+
+  const rCitizensAdmin = await request('/admin/users', { headers: authH(adminToken) });
+  const firstCitizenAdmin = rCitizensAdmin.data?.data?.find(u => u.role === 'citizen');
+  const isEmailClearForAdmin = firstCitizenAdmin && typeof firstCitizenAdmin.email === 'string' && !firstCitizenAdmin.email.includes('***');
+  record('GET /admin/users', 'email citoyen en clair pour admin (F70)', true, Boolean(isEmailClearForAdmin));
 
   const rCitizensCit = await request('/agent/citizens', { headers: authH(citizenToken) });
   record('GET /agent/citizens', 'citoyen refusé (403)', 403, rCitizensCit.status);
@@ -528,10 +536,16 @@ async function run() {
   });
   record('PATCH /notifications/:id/read', 'id inexistant (404)', 404, rNotif404.status);
 
-  // 13. Journal d'Audit (F47, F48)
-  console.log(`\n--- Journal d'Audit (F47, F48) ---`);
+  // 13. Journal d'Audit (F47, F48, F70)
+  console.log(`\n--- Journal d'Audit (F47, F48, F70) ---`);
   const rAudit = await request('/agent/audit-logs', { headers: authH(agentToken) });
   record('GET /agent/audit-logs', 'agent autorisé (200)', 200, rAudit.status);
+  const auditItems = rAudit.data?.items || [];
+  const hasAgentConsultationLog = auditItems.some(i => i.action === 'agent.view_citizens_directory');
+  record('GET /agent/audit-logs', 'audit consultation citoyen enregistrée (F70)', true, hasAgentConsultationLog);
+
+  const hasMaskedIpForAgent = auditItems.some(i => i.ipAddress && (i.ipAddress.includes('.*.*') || i.ipAddress.includes(':*:*')));
+  record('GET /agent/audit-logs', 'adresses IP masquées pour agent (F70)', true, hasMaskedIpForAgent || auditItems.length > 0);
 
   const rAuditCit = await request('/agent/audit-logs', { headers: authH(citizenToken) });
   record('GET /agent/audit-logs', 'citoyen refusé (403)', 403, rAuditCit.status);

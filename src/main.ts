@@ -17,8 +17,22 @@ import {
   seedTransports,
 } from './database/seed.js';
 
+import helmet from 'helmet';
+import express from 'express';
+import { GlobalExceptionFilter } from './common/global-exception.filter.js';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // 1. En-têtes de sécurité HTTP (Helmet)
+  app.use(helmet());
+
+  // 2. Limite stricte de taille des requêtes (JSON et URL-encoded max 2 Mo)
+  app.use(express.json({ limit: '2mb' }));
+  app.use(express.urlencoded({ limit: '2mb', extended: true }));
+
+  // 3. Masquage des erreurs techniques internes (aucune trace ou stack leak)
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Trust proxy for Passenger / Apache reverse proxy, to get accurate client IP in req.ip
   const expressApp = app.getHttpAdapter().getInstance();
@@ -26,22 +40,20 @@ async function bootstrap() {
     expressApp.set('trust proxy', 1);
   }
 
+  // 4. ValidationPipe global : retire silencieusement les champs non
+  // attendus (whitelist) sans faire échouer la requête avec 400
+  // (forbidNonWhitelisted volontairement omis — trop risqué à quelques
+  // heures de la fin : une requête front avec un champ en trop deviendrait
+  // un blocage total au lieu d'être simplement ignorée).
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
       transform: true,
     }),
   );
 
-  // Any http://localhost:<port> is always allowed, regardless of
-  // FRONT_URL, so a local front dev server works on whatever port it
-  // happens to run on without touching env vars.
+  // 5. CORS strict (uniquement FRONT_URL, plus localhost pour le dev)
   const LOCALHOST_ORIGIN = /^http:\/\/localhost:\d+$/;
-
-  // Real-world origins (prod front, a Vercel preview URL later, etc.) go
-  // in FRONT_URL as a comma-separated list — add one there, no code
-  // change needed.
   const frontUrl = process.env.FRONT_URL;
   const configuredOrigins = frontUrl
     ? frontUrl
@@ -61,7 +73,7 @@ async function bootstrap() {
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) {
-      // No Origin header = not a browser request (curl, server-to-server).
+      // Pas d'en-tête Origin = appel serveur à serveur ou curl
       if (
         !origin ||
         configuredOrigins.length === 0 ||
@@ -73,6 +85,7 @@ async function bootstrap() {
       }
       callback(new Error(`Origin ${origin} not allowed by CORS`), false);
     },
+    credentials: true,
   });
 
   // Connect manually (manualInitialization: true in app.module.ts) so a

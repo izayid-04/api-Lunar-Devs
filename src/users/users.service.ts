@@ -19,6 +19,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { NotificationType } from '../notifications/notification-type.enum.js';
 import { LoginAttemptsService } from '../auth/login-attempts.service.js';
+import { maskEmail } from '../common/masking.util.js';
+import type { AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 
 export type SafeUser = Omit<
   User,
@@ -238,8 +240,11 @@ export class UsersService {
     };
   }
 
-  // F34 : GET /agent/citizens avec recherche et pagination
-  async findCitizens(query: ListCitizensQueryDto): Promise<PaginatedCitizens> {
+  // F34 / F70 : GET /agent/citizens avec recherche, pagination, masquage agent & audit
+  async findCitizens(
+    query: ListCitizensQueryDto,
+    currentUser?: AuthenticatedUser,
+  ): Promise<PaginatedCitizens> {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const skip = (page - 1) * limit;
@@ -260,8 +265,32 @@ export class UsersService {
 
     const [users, total] = await qb.getManyAndCount();
 
+    const isAgent = currentUser && currentUser.role === UserRole.AGENT;
+
+    // F70 : Inscrire la consultation de données citoyen par un agent dans l'audit log
+    if (isAgent) {
+      await this.auditService.log({
+        action: 'agent.view_citizens_directory',
+        entityType: 'UserDirectory',
+        details: {
+          query: query.q || null,
+          page,
+          count: users.length,
+        },
+        author: { id: currentUser.sub } as User,
+      });
+    }
+
+    const safeUsers = users.map((u) => {
+      const safe = this.toSafe(u);
+      if (isAgent) {
+        safe.email = maskEmail(safe.email);
+      }
+      return safe;
+    });
+
     return {
-      data: users.map((u) => this.toSafe(u)),
+      data: safeUsers,
       total,
       page,
       limit,

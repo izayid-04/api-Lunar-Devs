@@ -24,8 +24,11 @@ export class AgentCitizensController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findCitizens(@Query() query: ListCitizensQueryDto) {
-    return this.usersService.findCitizens(query);
+  findCitizens(
+    @Query() query: ListCitizensQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.usersService.findCitizens(query, user);
   }
 
   @Patch(':id/status')
