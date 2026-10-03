@@ -1,27 +1,94 @@
 # API — contrat des routes
 
-Documentation précise de chaque route de l'API `api-lunar-devs`, à jour
-après chaque bloc. Sert de contrat entre le backend et l'agent front —
-toute réponse décrite ici est garantie tant que ce document n'a pas été
-mis à jour en conséquence.
+> **Dernière mise à jour : 03 octobre 2026 à 20:25 UTC+3 (17:25 UTC)**  
+> Conforme à 100% avec l'implémentation NestJS (`src/`).
+
+Documentation précise de chaque route de l'API `api-lunar-devs`. Sert de contrat strict entre le backend et l'agent front — toute réponse décrite ici est garantie.
 
 Base URL :
 - Production : `https://api.lunardevs.lescomores.webcup.hodi.cloud`
 - Local : `http://localhost:3000` (ou le port défini par `PORT`)
 
-Authentification : `Authorization: Bearer <accessToken>` (JWT obtenu via
-`POST /auth/login`). Les routes publiques n'en ont pas besoin.
+Authentification : `Authorization: Bearer <accessToken>` (JWT obtenu via `POST /auth/login`). Les routes publiques n'en ont pas besoin.
 
 Erreurs : toutes les erreurs suivent le format standard NestJS :
 ```json
 { "statusCode": 400, "error": "Bad Request", "message": "..." }
 ```
-`message` est une chaîne, ou un tableau de chaînes pour les erreurs de
-validation (`400`, une par champ invalide).
+`message` est une chaîne, ou un tableau de chaînes pour les erreurs de validation (`400`, une par champ invalide).
 
 ---
 
+## 📋 Tableau Récapitulatif Général des Routes
+
+| Domaine | Méthode & Route | Rôle Requis | Demandes Webcup Couvertes | Description |
+| :--- | :--- | :--- | :---: | :--- |
+| **Santé** | `GET /` | `public` | - | Message racine / confirmation API en ligne |
+| **Santé** | `GET /health` | `public` | - | État global du serveur (mémoire, Node, app) |
+| **Santé** | `GET /health/db` | `public` | - | Connexion base de données MySQL |
+| **Auth** | `POST /auth/register` | `public` | **D01** | Inscription nouvel habitant (rôle citizen) |
+| **Auth** | `POST /auth/login` | `public` | **D03** | Connexion avec identifiants, renvoie JWT |
+| **Profil** | `GET /me` | `connecté` | **D08** | Consultation de son espace personnel |
+| **Profil** | `PATCH /me` | `connecté` | **D12** | Mise à jour quartier, langue, vulnérabilité |
+| **Profil** | `DELETE /me` | `connecté` | **F33** | Suppression définitive du compte avec mot de passe |
+| **Sécurité** | `GET /me/security` | `connecté` | **F37** | Audit des accès personnels et échecs récents |
+| **Sécurité** | `GET /agent/security/targeted-accounts` | `agent`, `admin` | **F37** | Comptes ciblés par tentatives frauduleuses (24h) |
+| **Rôles** | `GET /agent/ping` | `agent`, `admin` | **D09** | Vérification des privilèges agent / admin |
+| **Rôles** | `GET /admin/ping` | `admin` | **D09** | Vérification des privilèges administrateur |
+| **Comptes** | `GET /agent/citizens` | `agent`, `admin` | **F34** | Annuaire des citoyens avec recherche et pagination |
+| **Comptes** | `PATCH /agent/citizens/:id/status` | `agent`, `admin` | **F34** | Activation / désactivation de compte citoyen |
+| **Messages** | `POST /messages` | `citizen` | **D04, F22, F25** | Dépôt d'une question ou d'un signalement |
+| **Messages** | `GET /messages/mine` | `citizen` | **F22** | Historique personnel des demandes |
+| **Messages** | `GET /messages/mine/:id` | `citizen` | **D11** | Détail d'une demande avec étapes de traitement |
+| **Messages** | `POST /messages/:id/support` | `citizen` | **F52** | Soutien citoyen ("upvote") à un signalement |
+| **Messages** | `GET /agent/messages` | `agent`, `admin` | **D11, F25, F52** | Gestionnaire agent, filtres et tri par popularité |
+| **Messages** | `PATCH /agent/messages/:id/status` | `agent`, `admin` | **D11, F49** | Changement de statut avec note et notification |
+| **Dashboard** | `GET /agent/dashboard` | `agent`, `admin` | **D19, F50** | Métriques d'activité, quartiers et catégories |
+| **Webcup** | `GET /agent/webcup/requests` | `agent`, `admin` | **D19** | Flux officiel des demandes du concours (proxy) |
+| **Services** | `GET /services` | `public` | **D05, F28, F32, F45, F46** | Annuaire, géolocalisation et recherche |
+| **Services** | `GET /services/:slug` | `public` | **D05** | Fiche détaillée d'un équipement ou service |
+| **Services** | `PATCH /services/:idOrSlug/availability` | `agent`, `admin` | **F38** | Gestion de la disponibilité d'un service |
+| **Rendez-vous** | `GET /appointments/slots` | `public` | **F39** | Créneaux disponibles sur les 7 prochains jours |
+| **Rendez-vous** | `POST /appointments/book/:slotId` | `citizen` | **F39** | Réservation sécurisée contre la concurrence |
+| **Rendez-vous** | `GET /appointments/mine` | `citizen` | **F39** | Mes rendez-vous municipaux à venir |
+| **Rendez-vous** | `PATCH /appointments/:id/cancel` | `citizen` | **F39** | Annulation de rendez-vous et libération du créneau |
+| **Rendez-vous** | `GET /appointments/:id/ics` | `connecté` | **F40** | Export fichier calendrier iCalendar (.ics) |
+| **Rendez-vous** | `GET /agent/appointments` | `agent`, `admin` | **F39** | Vue d'ensemble des créneaux pour les agents |
+| **Annonces** | `GET /announcements` | `public` | **D06** | Liste des actualités et communiqués |
+| **Annonces** | `GET /announcements/:id` | `public` | **D06** | Détail d'une annonce municipale |
+| **Annonces** | `POST /announcements` | `agent`, `admin` | **D06** | Publication d'une annonce (avec notif si important) |
+| **Annonces** | `PATCH /announcements/:id` | `agent`, `admin` | **D06** | Modification d'une annonce existante |
+| **Annonces** | `DELETE /announcements/:id` | `agent`, `admin` | **D06** | Retrait d'une annonce |
+| **Alertes** | `GET /alerts/active` | `public` / `connecté` | **D18, F29** | Alertes en cours (ciblage selon quartier/vulnérabilité)|
+| **Alertes** | `GET /alerts` | `public` | **D18** | Historique complet de toutes les alertes |
+| **Alertes** | `GET /alerts/:id` | `public` | **D18** | Fiche d'une alerte spécifique |
+| **Alertes** | `POST /alerts` | `agent`, `admin` | **D18** | Déclenchement d'une alerte avec notifications |
+| **Alertes** | `PATCH /alerts/:id/terminate` | `agent`, `admin` | **D18** | Clôture immédiate d'une alerte |
+| **Alertes** | `PATCH /alerts/:id` | `agent`, `admin` | **D18** | Modification des consignes d'une alerte |
+| **Alertes** | `DELETE /alerts/:id` | `admin` | **D18** | Suppression définitive (réservée admin) |
+| **Alertes** | `POST /agent/alerts/ai-recommendations` | `agent`, `admin` | **F31** | Recommandations IA d'urgence et vulnérabilité |
+| **Notifications** | `GET /notifications` | `connecté` | **F30, F40** | Liste des notifications et alertes ciblées |
+| **Notifications** | `PATCH /notifications/:id/read` | `connecté` | **F30** | Acquittement de lecture d'une notification |
+| **Audit** | `GET /agent/audit-logs` | `agent`, `admin` | **F47, F48** | Journal d'audit traçant « qui a fait quoi » |
+| **Transports** | `GET /transports` | `public` | **F36** | Lignes, horaires, fréquences et arrêts |
+| **Transports** | `GET /transports/:codeOrId` | `public` | **F36** | Détail et prochains départs d'une ligne |
+| **Transports** | `PATCH /transports/:codeOrId/status` | `agent`, `admin` | **F36** | Mise à jour de l'état du trafic en direct |
+| **Données / RGPD** | `POST /privacy/inquiries` | `citizen` | **F51** | Réclamation ou question sur les données personnelles |
+| **Données / RGPD** | `GET /privacy/inquiries/mine` | `citizen` | **F51** | Suivi personnel de ses demandes RGPD |
+| **Données / RGPD** | `GET /agent/privacy/inquiries` | `agent`, `admin` | **F51** | Registre des sollicitations RGPD pour agents |
+| **Données / RGPD** | `PATCH /agent/privacy/inquiries/:id/status` | `agent`, `admin` | **F51** | Réponse officielle et notification au citoyen |
+
+---
+
+
 ## Santé
+
+### `GET /`
+- **Rôle** : public.
+- **Réponse `200`** : confirmation textuelle que le serveur racine est en ligne.
+  ```text
+  Hello World!
+  ```
 
 ### `GET /health`
 - **Rôle** : public.
