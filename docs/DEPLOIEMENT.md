@@ -427,6 +427,7 @@ En plus des variables listées en §2 et §6 :
 | `JWT_SECRET` | Une valeur longue et aléatoire — **jamais** la même qu'en dev. Quiconque la connaît peut forger un token admin valide. À générer avec : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` (pas besoin d'aller en chercher un ailleurs). |
 | `DEMO_AGENT_EMAIL`, `DEMO_AGENT_PASSWORD` | Identifiants du compte agent de démo pour le jury. |
 | `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | Identifiants du compte admin de démo pour le jury. |
+| `WEBCUP_API_KEY` | Clé de l'API Webcup (`GET /agent/webcup/requests`), envoyée dans l'en-tête `X-Webcup-Api-Key`. Jamais exposée en réponse ni en log. |
 
 ### Tester les 3 rôles en local
 

@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AnnouncementsModule } from './announcements/announcements.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 import { dataSourceOptions } from './database/data-source.js';
 import { HealthController } from './health.controller.js';
+import { MessagesModule } from './messages/messages.module.js';
 import { AdminPingController, AgentPingController } from './role-demo.controller.js';
+import { ServicesModule } from './services/services.module.js';
 import { UsersModule } from './users/users.module.js';
+import { WebcupModule } from './webcup/webcup.module.js';
 
 @Module({
   imports: [
@@ -20,6 +25,11 @@ import { UsersModule } from './users/users.module.js';
     }),
     UsersModule,
     AuthModule,
+    MessagesModule,
+    WebcupModule,
+    DashboardModule,
+    ServicesModule,
+    AnnouncementsModule,
   ],
   controllers: [
     AppController,

@@ -7,7 +7,11 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AppModule } from './app.module.js';
-import { seedDemoUsers } from './database/seed.js';
+import {
+  seedAnnouncements,
+  seedDemoUsers,
+  seedMunicipalServices,
+} from './database/seed.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -72,10 +76,14 @@ async function bootstrap() {
     console.log('Database connected and migrations applied.');
 
     try {
+      // Order matters: demo users first, so seedAnnouncements has an
+      // admin account to attribute seeded announcements to.
       await seedDemoUsers(dataSource);
+      await seedMunicipalServices(dataSource);
+      await seedAnnouncements(dataSource);
     } catch (seedErr) {
       console.error(
-        'Demo user seeding failed:',
+        'Seeding failed:',
         seedErr instanceof Error ? seedErr.message : seedErr,
       );
     }

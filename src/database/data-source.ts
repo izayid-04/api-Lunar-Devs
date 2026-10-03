@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path';
 import { DataSource, type DataSourceOptions } from 'typeorm';
 import { HealthCheck } from './entities/health-check.entity.js';
 import { User } from '../users/entities/user.entity.js';
+import { CitizenMessage } from '../messages/entities/citizen-message.entity.js';
+import { MunicipalService } from '../services/entities/municipal-service.entity.js';
+import { Announcement } from '../announcements/entities/announcement.entity.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -19,7 +22,7 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [HealthCheck, User],
+  entities: [HealthCheck, User, CitizenMessage, MunicipalService, Announcement],
   migrations: [join(currentDir, 'migrations', '*{.ts,.js}')],
   synchronize: false,
   migrationsRun: true,

@@ -57,6 +57,10 @@ export class UsersService {
     return this.toSafe(saved);
   }
 
+  countByRole(role: UserRole): Promise<number> {
+    return this.repository.count({ where: { role } });
+  }
+
   toSafe(user: User): SafeUser {
     const { passwordHash: _passwordHash, id, ...safe } = user;
     return { ...safe, id: String(id) };
