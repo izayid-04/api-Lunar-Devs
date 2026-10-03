@@ -5,10 +5,10 @@ Ce document décrit l'hébergement, la configuration à saisir dans Hodifly, et
 la procédure pour vérifier que tout fonctionne, côté API (ce dépôt) comme
 côté front.
 
-> ⚠️ Ce dépôt ne contient volontairement **aucune logique métier** avant le
-> lancement du hackathon (règlement). Il ne contient que le squelette
-> technique (NestJS + Passenger + route `/health`) nécessaire pour valider
-> la chaîne de déploiement à l'avance.
+> Le sujet est tombé le 3 octobre 2026 : la plateforme numérique de la
+> ville **Nova Terra**. Le Bloc 1 (inscription, connexion, espace
+> personnel, rôles, contrôle d'accès) est implémenté — voir
+> [`docs/DEMANDES.md`](./DEMANDES.md) pour le détail par demande.
 
 ## 1. Hébergement
 
@@ -351,9 +351,104 @@ au cœur du problème.
   `tsconfig.build.json` ou de `nest-cli.json`), mettre à jour le chemin
   importé dans `server.cjs` en conséquence.
 
-## 8. Rappel — pas de logique métier avant le lancement
+## 8. Authentification et rôles (Bloc 1)
 
-Ce dépôt doit rester un squelette technique jusqu'au démarrage officiel du
-hackathon (3 octobre 2026). Toute fonctionnalité liée au sujet du
-hackathon doit être développée **après** le lancement, conformément au
-règlement.
+### Modèle
+
+- Entité `User` (`src/users/entities/user.entity.ts`, table `users`) :
+  `id`, `email` (unique), `passwordHash`, `firstName`, `lastName`, `role`
+  (enum MySQL `citizen` / `agent` / `admin`, défaut `citizen`),
+  `createdAt`. Migration : `src/database/migrations/*-CreateUsers.ts`.
+- Mots de passe hashés avec **`bcryptjs`** (implémentation 100% JS de
+  bcrypt, donc pas de code natif à compiler — même contrainte glibc 2.28
+  que pour `mysql2`, voir §6). Ne jamais utiliser le paquet `bcrypt`
+  natif sur ce serveur.
+
+### Endpoints
+
+| Route | Rôle requis | Description |
+| ----- | ----------- | ----------- |
+| `POST /auth/register` | public | Crée un compte **toujours `citizen`** — le champ `role` n'existe pas dans le DTO, et `ValidationPipe({ forbidNonWhitelisted: true })` (voir `src/main.ts`) rejette avec `400` toute requête qui tente d'en envoyer un. |
+| `POST /auth/login` | public | Vérifie le mot de passe (`bcrypt.compare`), renvoie `{ accessToken }` (JWT signé avec `JWT_SECRET`, 1 jour de validité). |
+| `GET /me` | connecté (tout rôle) | Profil de l'utilisateur authentifié par le JWT (jamais `passwordHash`). |
+| `GET /agent/ping` | `agent`, `admin` | Démo de route protégée par rôle. |
+| `GET /admin/ping` | `admin` | Démo de route protégée par rôle. |
+
+Toutes les entrées (`register`, `login`) sont validées avec
+`class-validator` (email valide, mot de passe ≥ 8 caractères, etc.) ; une
+requête invalide renvoie `400` avant d'atteindre la base.
+
+### Contrôle d'accès
+
+- `JwtAuthGuard` (`src/auth/jwt-auth.guard.ts`) : vérifie l'en-tête
+  `Authorization: Bearer <token>` avec `JwtService` (secret
+  `JWT_SECRET`) et attache l'utilisateur décodé à la requête. Sans
+  token valide → `401`.
+- `@Roles(...)` + `RolesGuard` (`src/auth/roles.decorator.ts`,
+  `src/auth/roles.guard.ts`) : à poser après `JwtAuthGuard` sur un
+  contrôleur ou une méthode. Si le rôle de l'utilisateur authentifié
+  n'est pas dans la liste → `403`.
+- `AuthModule` est `@Global()` (et son `JwtModule` enregistré avec
+  `global: true`) : n'importe quel futur module métier (blocs suivants
+  du hackathon) peut utiliser `@UseGuards(JwtAuthGuard, RolesGuard)` +
+  `@Roles(UserRole.XXX)` sans réimporter `AuthModule`.
+
+### Comptes de démonstration (jury)
+
+Au démarrage, `seedDemoUsers()` (`src/database/seed.ts`) crée — **de
+façon idempotente** (ne recrée jamais un compte existant, ne touche
+jamais son mot de passe) — un compte `agent` et un compte `admin` à
+partir de ces variables d'environnement :
+
+| Variable | Rôle créé |
+| -------- | --------- |
+| `DEMO_AGENT_EMAIL` / `DEMO_AGENT_PASSWORD` | `agent` |
+| `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` | `admin` |
+
+Si une paire n'est pas définie, ce compte est simplement ignoré (log
+d'avertissement, pas de crash). **À définir dans Hodifly avant la
+démo/le rendu** pour que le jury ait des comptes `agent` et `admin`
+prêts à l'emploi sans avoir à les créer à la main (`/auth/register` ne
+crée que des `citizen`).
+
+### Variable supplémentaire à saisir dans Hodifly
+
+En plus des variables listées en §2 et §6 :
+
+| Variable | Valeur |
+| -------- | ------ |
+| `JWT_SECRET` | Une valeur longue et aléatoire — **jamais** la même qu'en dev. Quiconque la connaît peut forger un token admin valide. |
+| `DEMO_AGENT_EMAIL`, `DEMO_AGENT_PASSWORD` | Identifiants du compte agent de démo pour le jury. |
+| `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | Identifiants du compte admin de démo pour le jury. |
+
+### Tester les 3 rôles en local
+
+```bash
+# 1. Inscription (toujours citizen)
+curl -s -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"citoyen@example.com","password":"MotDePasse123","firstName":"A","lastName":"B"}'
+
+# 2. Connexion (citizen, puis avec les comptes agent/admin de démo)
+curl -s -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"citoyen@example.com","password":"MotDePasse123"}'
+# → { "accessToken": "..." }
+
+# 3. Accès refusé (citizen sur une route agent/admin → 403)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/agent/ping \
+  -H "Authorization: Bearer <token-citizen>"
+
+# 4. Accès autorisé (agent sur /agent/ping, admin sur /agent/ping et /admin/ping)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/agent/ping \
+  -H "Authorization: Bearer <token-agent>"
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/admin/ping \
+  -H "Authorization: Bearer <token-admin>"
+```
+
+## 9. Rappel — règlement du hackathon
+
+Le sujet a été révélé le 3 octobre 2026 ; le développement de
+fonctionnalités métier (blocs de demandes) est désormais autorisé et en
+cours. Voir [`docs/DEMANDES.md`](./DEMANDES.md) pour la correspondance
+entre chaque demande du sujet et ce qui la satisfait dans le code.

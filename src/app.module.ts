@@ -2,8 +2,11 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
-import { HealthController } from './health.controller.js';
+import { AuthModule } from './auth/auth.module.js';
 import { dataSourceOptions } from './database/data-source.js';
+import { HealthController } from './health.controller.js';
+import { AdminPingController, AgentPingController } from './role-demo.controller.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -15,8 +18,15 @@ import { dataSourceOptions } from './database/data-source.js';
       // way — GET /health/db reports the actual DB status).
       manualInitialization: true,
     }),
+    UsersModule,
+    AuthModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [
+    AppController,
+    HealthController,
+    AgentPingController,
+    AdminPingController,
+  ],
   providers: [AppService],
 })
 export class AppModule {}

@@ -3,11 +3,10 @@
 API backend de l'équipe **Lunar Devs** pour le hackathon 24h **Webcup
 Comores** (3-4 octobre 2026).
 
-> ⚠️ **Statut : squelette technique uniquement.** Conformément au
-> règlement du hackathon, ce dépôt ne contient aucune logique métier liée
-> au sujet avant le lancement officiel. Il fournit uniquement la base
-> technique (NestJS + config de déploiement + route de santé) nécessaire
-> pour valider la chaîne de déploiement à l'avance.
+Le sujet est tombé le 3 octobre 2026 : la plateforme numérique de la ville
+**Nova Terra**. Le Bloc 1 (comptes, rôles, contrôle d'accès) est
+implémenté — voir [`docs/DEMANDES.md`](./docs/DEMANDES.md) pour la
+correspondance entre chaque demande du sujet et le code qui la satisfait.
 
 ## Stack technique
 
@@ -16,6 +15,8 @@ Comores** (3-4 octobre 2026).
 - [Vitest](https://vitest.dev) pour les tests unitaires et e2e
 - [TypeORM](https://typeorm.io) + [`mysql2`](https://github.com/sidorares/node-mysql2)
   (pilote 100% JS, pas de code natif) pour MySQL
+- [`@nestjs/jwt`](https://github.com/nestjs/jwt) + [`bcryptjs`](https://github.com/dcodeIO/bcrypt.js)
+  (100% JS, pas de code natif) pour l'authentification
 - Hébergement : cPanel HODI via **Hodifly** (Passenger), voir
   [`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md)
 
@@ -44,7 +45,10 @@ cp .env.example .env
 | `PORT`      | Port d'écoute HTTP (géré automatiquement par Passenger en prod) | Non — défaut `3000` |
 | `FRONT_URL` | Origine(s) autorisée(s) en CORS (front Next.js), séparées par des virgules si plusieurs | Recommandé en prod |
 | `APP_NAME`  | Nom applicatif, exposé par `/health` pour vérifier que les variables Hodifly sont bien lues | Non |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connexion MySQL, en variables séparées (pas d'URL, pour éviter les soucis d'encodage du mot de passe) | Oui, pour que `/health/db` fonctionne |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Connexion MySQL, en variables séparées (pas d'URL, pour éviter les soucis d'encodage du mot de passe) | Oui, pour que `/health/db` et l'auth fonctionnent |
+| `JWT_SECRET` | Secret de signature des JWT (auth) | Oui, pour `/auth/login` |
+| `DEMO_AGENT_EMAIL` / `DEMO_AGENT_PASSWORD` | Identifiants du compte `agent` de démo créé au démarrage | Non — ce compte est juste ignoré si absent |
+| `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` | Identifiants du compte `admin` de démo créé au démarrage | Non — idem |
 
 En production (Hodifly), ces variables se définissent dans l'interface
 Hodifly, pas dans un fichier `.env` — voir
@@ -108,6 +112,36 @@ les cas, puisqu'elle ne dépend jamais de la base. Voir §6 de
 [`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md) pour le détail et comment
 tester en local avec un MySQL Docker.
 
+## Authentification et rôles
+
+3 rôles : `citizen` (créé par défaut à l'inscription), `agent`, `admin`.
+
+```bash
+# Inscription (toujours citizen, même si on essaie d'envoyer un rôle)
+curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"a@example.com","password":"MotDePasse123","firstName":"A","lastName":"B"}'
+
+# Connexion → JWT
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"a@example.com","password":"MotDePasse123"}'
+
+# Profil connecté
+curl http://localhost:3000/me -H "Authorization: Bearer <token>"
+
+# Routes protégées par rôle (citizen → 403 sur les deux)
+curl http://localhost:3000/agent/ping -H "Authorization: Bearer <token>"   # agent, admin
+curl http://localhost:3000/admin/ping -H "Authorization: Bearer <token>"  # admin
+```
+
+Des comptes `agent` et `admin` de démonstration sont créés automatiquement
+au démarrage (idempotent) à partir de `DEMO_AGENT_EMAIL`/`DEMO_AGENT_PASSWORD`
+et `DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD` — pratique pour le jury, qui n'a
+pas de flux d'inscription pour ces rôles. Détail complet (guards, modèle de
+données) dans [`docs/DEPLOIEMENT.md`](./docs/DEPLOIEMENT.md) §8 et dans
+[`docs/DEMANDES.md`](./docs/DEMANDES.md).
+
 ## Migrations
 
 Le schéma est géré uniquement par migrations TypeORM (`synchronize:
@@ -135,17 +169,33 @@ procédure de test) est documentée dans
 
 ```
 src/
-  main.ts                           # bootstrap Nest, CORS, port, connexion DB manuelle
+  main.ts                           # bootstrap Nest, CORS, validation, port, connexion DB + seed
   app.module.ts                      # module racine, config TypeORM
   health.controller.ts               # routes GET /health et GET /health/db
+  role-demo.controller.ts            # GET /agent/ping, GET /admin/ping (démo RBAC)
   app.controller.ts                  # route GET / (placeholder)
   app.service.ts
+  auth/
+    auth.module.ts                   # module global (JwtModule, guards)
+    auth.controller.ts                # POST /auth/register, POST /auth/login
+    auth.service.ts
+    me.controller.ts                  # GET /me
+    jwt-auth.guard.ts                 # vérifie le JWT (401 si absent/invalide)
+    roles.guard.ts, roles.decorator.ts # @Roles(...) + contrôle d'accès (403)
+    current-user.decorator.ts
+    dto/register.dto.ts, dto/login.dto.ts
+  users/
+    entities/user.entity.ts           # id, email, passwordHash, firstName, lastName, role, createdAt
+    user-role.enum.ts                 # citizen | agent | admin
+    users.service.ts, users.module.ts
   database/
     data-source.ts                   # config MySQL partagée (app + CLI TypeORM)
     entities/health-check.entity.ts  # entité de test HealthCheck
     migrations/                      # migrations TypeORM (exécutées auto au démarrage)
+    seed.ts                          # comptes agent/admin de démo, idempotent
 server.cjs                 # point d'entrée Passenger (CommonJS), charge dist/main.js
 docs/DEPLOIEMENT.md        # documentation d'hébergement et de déploiement
+docs/DEMANDES.md            # correspondance demande du sujet → code
 .env.example                # variables d'environnement attendues
 ```
 
