@@ -12,6 +12,10 @@ export class MunicipalService {
   @Column()
   name!: string;
 
+  // Catégorie fonctionnelle (sante, securite, administratif, culture, education, voirie, eau-energie, tourisme)
+  @Column({ default: 'administratif' })
+  category!: string;
+
   @Column({ type: 'text' })
   description!: string;
 
@@ -24,10 +28,27 @@ export class MunicipalService {
   @Column()
   horaires!: string;
 
-  // Neighborhood name — plain text, used by the front to group/place
-  // services on an interactive map later.
+  // Neighborhood name — plain text from DISTRICTS
   @Column()
   district!: string;
+
+  // F45 - Cartographie physique
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  address!: string | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  latitude!: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  longitude!: number | null;
+
+  // F28 - Services mis en avant en premier
+  @Column({ name: 'is_featured', default: false })
+  featured!: boolean;
+
+  // F46 - Services d'urgence / santé vitale
+  @Column({ name: 'is_emergency', default: false })
+  isEmergency!: boolean;
 
   // F38 — Disponibilité des services
   @Column({

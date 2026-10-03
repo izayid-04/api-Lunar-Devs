@@ -1,6 +1,15 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ServicesService } from './services.service.js';
 import { UpdateServiceAvailabilityDto } from './dto/update-service-availability.dto.js';
+import { ListServicesQueryDto } from './dto/list-services-query.dto.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
@@ -11,8 +20,8 @@ export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 
   @Get()
-  findAll() {
-    return this.servicesService.findAll();
+  findAll(@Query() query: ListServicesQueryDto) {
+    return this.servicesService.findAll(query);
   }
 
   @Get(':slug')

@@ -331,22 +331,39 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
   - `recentMessages` : les 5 messages les plus récents, tous statuts
     confondus, avec l'auteur.
 
-## Contenu de la ville (Bloc 4 — D05, D06)
+## Contenu de la ville (Bloc 4 — D05, D06, F28, F32, F38, F45, F46)
 
 ### `GET /services`
 - **Rôle** : public.
-- **Réponse `200`** : tableau de tous les services municipaux, triés par
-  quartier puis par nom, incluant l'état de disponibilité en temps réel (`availability`, `availabilityMessage`, `availableAgainAt`, `alternative`).
+- **Query params (F28, F32, F45, F46)** :
+  - `q` (optionnel) : recherche textuelle sur le nom, description, détails ou catégorie (ex: `?q=hopital` ou `?q=urgences`).
+  - `category` (optionnel) : filtrage par catégorie fonctionnelle (`sante`, `securite`, `administratif`, `culture`, `education`, `voirie`, `eau-energie`, `tourisme`).
+  - `district` (optionnel) : filtrage par quartier de Nova Terra (`Centre-Ville`, `Port Stellaire`, etc.).
+  - `featured` (optionnel) : `true` / `false` pour filtrer les services mis en avant.
+  - `emergency` (optionnel) : `true` / `false` pour filtrer les services de secours et d'urgence vitale 24h/24 (F46).
+- **Tri des résultats** : les services mis en avant (`featured: true`) apparaissent **toujours en premier**, suivis des services d'urgence, puis par ordre alphabétique.
+- **Réponse `200`** : tableau des services municipaux incluant la géolocalisation pour la cartographie (F45), les urgences (F46) et la disponibilité (F38) :
   ```json
   [
     {
-      "id": 1, "slug": "mairie-de-nova-terra", "name": "Mairie de Nova Terra",
-      "description": "...", "details": "...", "contact": "...", "horaires": "...",
-      "district": "Centre-Ville",
-      "availability": "incident",
-      "availabilityMessage": "Panne de climatisation centrale",
-      "availableAgainAt": "2026-10-04T08:00:00.000Z",
-      "alternative": "Utiliser le commissariat central pour les urgences"
+      "id": 4,
+      "slug": "hopital-etoile-du-sud",
+      "name": "Hôpital Étoile du Sud",
+      "category": "sante",
+      "description": "Urgences médicales 24h/24 et soins hospitaliers de référence.",
+      "details": "Établissement hospitalier principal de Nova Terra...",
+      "contact": "+269 773 20 01 · hopital@novaterra.city",
+      "horaires": "24h/24, 7j/7",
+      "district": "Port Stellaire",
+      "address": "42 Avenue du Port, Port Stellaire",
+      "latitude": -11.7185,
+      "longitude": 43.2421,
+      "featured": true,
+      "isEmergency": true,
+      "availability": "disponible",
+      "availabilityMessage": null,
+      "availableAgainAt": null,
+      "alternative": null
     }
   ]
   ```

@@ -44,14 +44,16 @@ Détail complet des routes (corps, réponses, codes d'erreur) dans
 Détail complet (format de réponse, comportement du cache, codes
 d'erreur) dans [`docs/API.md`](./API.md).
 
-## Bloc 4 — Contenu de la ville
+## Bloc 4 — Contenu de la ville (D05, D06, F28, F32, F45, F46)
 
 | Code | Demande | Satisfait par |
 | ---- | ------- | -------------- |
-| **D05** | Annuaire des services municipaux | Entité `MunicipalService` (`src/services/`) — 8 services seedés de façon idempotente, répartis sur 5 quartiers (Centre-Ville, Port Stellaire, Quartier des Dunes, Hauts de Nova, Faubourg Est). `GET /services` (liste) et `GET /services/:slug` (détail), publics — le champ `district` sert de base pour la carte interactive à venir. |
+| **D05** | Annuaire des services municipaux | Entité `MunicipalService` (`src/services/`) — 8 services seedés de façon idempotente, répartis sur 5 quartiers (Centre-Ville, Port Stellaire, Quartier des Dunes, Hauts de Nova, Faubourg Est). `GET /services` (liste) et `GET /services/:slug` (détail), publics. |
 | **D06** | Annonces municipales | Entité `Announcement` (`src/announcements/`) — seed idempotent de 4 annonces. `GET /announcements` (liste, plus récentes d'abord) et `GET /announcements/:id`, publics. Gestion (`POST`/`PATCH`/`DELETE /announcements`) réservée à `agent`/`admin` ; l'auteur est suivi en interne mais jamais exposé publiquement. |
-
-Détail complet des routes dans [`docs/API.md`](./API.md).
+| **F28** | Services prioritaires mis en avant (`featured`) | Champ `featured` sur `MunicipalService`. Tri automatique dans `GET /services` plaçant les services mis en avant en premier (Mairie, Hôpital Étoile du Sud, Voirie). Filtre `?featured=true`. |
+| **F32** | Recherche et filtre par catégorie (dont Santé) | Query params `?q=` (recherche plein texte sur nom, description, détails, catégorie) et `?category=sante` sur `GET /services`. Permet aux citoyens de trouver les services de santé instantanément. |
+| **F45** | Cartographie des services physiques | Coordonnées GPS (`latitude`, `longitude`) et adresse physique (`address`) sur `MunicipalService` pour chaque équipement de Nova Terra. Permet l'affichage sur plan interactif. |
+| **F46** | Localisation rapide des hôpitaux et services d'urgence | Champ `isEmergency` sur `MunicipalService` (Hôpital Étoile du Sud, Commissariat Central, Urgences Eaux & Énergie) avec filtre dédié `GET /services?emergency=true`. |
 
 ## Chantier 1 — Profil (prépare D12, F29, F31)
 
