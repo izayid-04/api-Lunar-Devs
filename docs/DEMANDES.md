@@ -19,16 +19,18 @@ comptes de démonstration pour le jury, procédure de test) dans
 [`docs/DEPLOIEMENT.md`](./DEPLOIEMENT.md), section **§8 Authentification
 et rôles**.
 
-## Bloc 2 — Messages des habitants vers les services
+## Bloc 2 — Messages et signalements des habitants (D04, D11, F22, F25)
 
 | Code | Demande | Satisfait par |
 | ---- | ------- | -------------- |
-| **D04** | Les habitants peuvent envoyer un message à un service de la ville | `POST /messages` (`src/messages/`), réservé aux `citizen`. Entité `CitizenMessage` (`id`, `reference`, `author`, `subject`, `body`, `category`, `status`, `createdAt`, `updatedAt`). |
+| **D04** | Les habitants peuvent envoyer un message à un service de la ville | `POST /messages` (`src/messages/`), réservé aux `citizen`. Entité `CitizenMessage` (`id`, `reference`, `author`, `type`, `subject`, `body`, `category`, `district`, `preciseLocation`, `status`, `createdAt`, `updatedAt`). |
 | **F22** | L'habitant reçoit une confirmation d'envoi, suivable | `POST /messages` renvoie une référence lisible (`NT-0001`, `NT-0002`, ...) générée depuis l'id. `GET /messages/mine` liste les messages de l'habitant connecté avec leur statut (`nouveau`, `en_cours`, `traite`), triés du plus récent au plus ancien. |
+| **D11** | Suivi et chronologie des étapes d'un message / signalement | Entité `MessageStatusHistory` (`message`, `status`, `note`, `changedAt`, `changedBy`). Création automatique de l'étape initiale à la soumission et à chaque changement de statut via `PATCH /agent/messages/:id/status` (qui accepte une `note` optionnelle). `GET /messages/mine` et `GET /messages/mine/:id` renvoient l'historique chronologique pour le citoyen (`404` si non propriétaire ou inexistant). |
+| **F25** | Signalement d'incidents par quartier | Support du type `signalement` (vs `question`) sur `POST /messages`. Champs obligatoires : `district` (validé contre `DISTRICTS`), `preciseLocation`, `category` (`voirie`, `eclairage`, `propreté`, `eau`, `autre`). Filtrage par type disponible côté agent via `GET /agent/messages?type=signalement`. |
 
-Côté agent : `GET /agent/messages?status=` (liste filtrable, triée, avec
+Côté agent : `GET /agent/messages?status=&type=` (liste filtrable, triée, avec
 le nombre de messages par statut) et `PATCH /agent/messages/:id/status`
-(changement de statut) — réservés à `agent`/`admin`.
+(changement de statut avec note) — réservés à `agent`/`admin`.
 
 Détail complet des routes (corps, réponses, codes d'erreur) dans
 [`docs/API.md`](./API.md).

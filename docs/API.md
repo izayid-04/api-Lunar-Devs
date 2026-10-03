@@ -144,67 +144,139 @@ validation (`400`, une par champ invalide).
 
 ---
 
-## Messages des habitants (Bloc 2 — D04, F22)
+## Messages et signalements des habitants (Bloc 2 — D04, D11, F22, F25)
 
-Un habitant envoie un message à un service de la ville ; un agent/admin
-le traite en changeant son statut (`nouveau` → `en_cours` → `traite`).
+Un habitant envoie une question ou un signalement d'incident à un service de la ville. Les étapes de traitement (`nouveau` → `en_cours` → `traite`) sont historisées dans une chronologie avec notes explicatives.
 
 ### `POST /messages`
 - **Rôle** : `citizen`.
-- **Corps** :
+- **Corps (Question classique)** :
   ```json
-  { "subject": "Lampadaire cassé", "body": "Le lampadaire devant le 12 rue des Etoiles ne fonctionne plus.", "category": "eclairage" }
+  {
+    "type": "question",
+    "subject": "Horaires de la mairie",
+    "body": "Pourriez-vous me préciser les créneaux d'ouverture le samedi matin ?",
+    "category": "administratif"
+  }
   ```
+  - `type` : optionnel, défaut `question`. Valeurs : `question`, `signalement`.
   - `subject` : 3 à 150 caractères.
   - `body` : 10 à 5000 caractères.
-  - `category` : texte libre, 1 à 100 caractères (pas de liste fermée imposée par l'API).
-- **Réponse `201`** — la référence (`reference`) sert de confirmation d'envoi à afficher à l'habitant :
+  - `category` : texte libre (1 à 100 car.) si question.
+- **Corps (Signalement d'incident — F25)** :
+  ```json
+  {
+    "type": "signalement",
+    "subject": "Lampadaire défaillant",
+    "body": "Le lampadaire face au numéro 12 scintille et s'éteint la nuit.",
+    "category": "eclairage",
+    "district": "Port Stellaire",
+    "preciseLocation": "12 avenue de la Mer, en face de la pharmacie"
+  }
+  ```
+  - `category` : obligatoire parmi `voirie`, `eclairage`, `propreté`, `eau`, `autre`.
+  - `district` : obligatoire parmi `Centre-Ville`, `Port Stellaire`, `Quartier des Dunes`, `Hauts de Nova`, `Faubourg Est`.
+  - `preciseLocation` : obligatoire (max 255 caractères).
+- **Réponse `201`** — la référence (`reference`) et la chronologie initiale sont créées immédiatement :
   ```json
   {
     "id": 1,
     "reference": "NT-0001",
-    "subject": "Lampadaire cassé",
+    "type": "signalement",
+    "subject": "Lampadaire défaillant",
     "body": "...",
     "category": "eclairage",
+    "district": "Port Stellaire",
+    "preciseLocation": "12 avenue de la Mer, en face de la pharmacie",
     "status": "nouveau",
     "createdAt": "2026-10-03T12:00:00.000Z",
-    "updatedAt": "2026-10-03T12:00:00.000Z"
+    "updatedAt": "2026-10-03T12:00:00.000Z",
+    "history": [
+      {
+        "id": 1,
+        "status": "nouveau",
+        "note": "Signalement enregistré",
+        "changedAt": "2026-10-03T12:00:00.000Z",
+        "changedBy": { "id": "10", "firstName": "Alice", "lastName": "Mbaé" }
+      }
+    ]
   }
   ```
-- **`403`** pour `agent`/`admin` (cette route est réservée aux citoyens). **`400`** si validation échoue.
+- **`403`** pour `agent`/`admin` (route réservée aux citoyens). **`400`** si validation échoue (ex. catégorie inconnue ou champ manquant pour un signalement).
 
 ### `GET /messages/mine`
 - **Rôle** : `citizen`.
-- **Réponse `200`** : tableau des messages de l'habitant connecté, **plus récents d'abord** — même forme d'objet que ci-dessus, sans `author` (c'est déjà l'utilisateur connecté).
+- **Réponse `200`** : liste des messages de l'habitant avec leur chronologie d'étapes (`history`), triés du plus récent au plus ancien.
   ```json
-  [ { "id": 2, "reference": "NT-0002", "subject": "...", "body": "...", "category": "...", "status": "nouveau", "createdAt": "...", "updatedAt": "..." }, ... ]
+  [
+    {
+      "id": 1,
+      "reference": "NT-0001",
+      "type": "signalement",
+      "subject": "...",
+      "body": "...",
+      "category": "eclairage",
+      "district": "Port Stellaire",
+      "preciseLocation": "...",
+      "status": "en_cours",
+      "createdAt": "...",
+      "updatedAt": "...",
+      "history": [
+        { "id": 1, "status": "nouveau", "note": "Signalement enregistré", "changedAt": "..." },
+        { "id": 2, "status": "en_cours", "note": "Équipe technique dépêchée", "changedAt": "..." }
+      ]
+    }
+  ]
   ```
 
-### `GET /agent/messages?status=`
+### `GET /messages/mine/:id`
+- **Rôle** : `citizen`.
+- **Réponse `200`** : détail du message avec chronologie complète.
+- **`404`** si le message n'existe pas ou n'appartient pas au citoyen connecté (ne fuite aucune information). **`401`** sans token, **`403`** pour `agent`/`admin`.
+
+### `GET /agent/messages?status=&type=`
 - **Rôle** : `agent`, `admin`.
-- **Query param `status`** (optionnel) : un parmi `nouveau`, `en_cours`, `traite`. Absent = tous les messages.
+- **Query params** :
+  - `status` (optionnel) : `nouveau`, `en_cours`, `traite`.
+  - `type` (optionnel) : `question`, `signalement`.
 - **Réponse `200`** :
   ```json
   {
     "messages": [
       {
-        "id": 1, "reference": "NT-0001", "subject": "...", "body": "...", "category": "...",
-        "status": "en_cours", "createdAt": "...", "updatedAt": "...",
-        "author": { "id": "3", "firstName": "Mo", "lastName": "Said", "email": "mo@example.com" }
+        "id": 1,
+        "reference": "NT-0001",
+        "type": "signalement",
+        "subject": "...",
+        "body": "...",
+        "category": "eclairage",
+        "district": "Port Stellaire",
+        "preciseLocation": "...",
+        "status": "en_cours",
+        "createdAt": "...",
+        "updatedAt": "...",
+        "author": { "id": "3", "firstName": "Mo", "lastName": "Said", "email": "mo@example.com" },
+        "history": [ ... ]
       }
     ],
     "counts": { "nouveau": 1, "en_cours": 1, "traite": 0 }
   }
   ```
-  - `messages` est trié par `createdAt` décroissant, filtré par `status` si fourni.
-  - **`counts` porte toujours sur TOUS les messages**, indépendamment du filtre `status` appliqué à `messages` — pensé pour afficher un badge par onglet de statut dans l'UI pendant qu'une liste filtrée est affichée.
-- **`400`** si `status` a une valeur hors enum.
+  - `counts` s'adapte au filtre `type` s'il est spécifié.
 
 ### `PATCH /agent/messages/:id/status`
 - **Rôle** : `agent`, `admin`.
-- **Corps** : `{ "status": "en_cours" }` (une valeur parmi `nouveau`, `en_cours`, `traite`).
-- **Réponse `200`** : le message mis à jour (même forme que `POST /messages`, sans `author`).
-- **`404`** si l'id n'existe pas. **`400`** si `status` invalide.
+- **Corps** :
+  ```json
+  {
+    "status": "en_cours",
+    "note": "Intervention programmée pour demain matin"
+  }
+  ```
+  - `status` : obligatoire (`nouveau`, `en_cours`, `traite`).
+  - `note` : facultatif (max 1000 caractères), ajoutée à l'étape d'historique.
+- **Réponse `200`** : le message mis à jour avec son historique actualisé.
+- **`404`** si message inexistant. **`400`** si `status` invalide.
 
 ---
 

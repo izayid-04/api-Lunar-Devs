@@ -8,7 +8,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { JwtAuthGuard, type AuthenticatedUser } from '../auth/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { UserRole } from '../users/user-role.enum.js';
@@ -24,14 +25,15 @@ export class AgentMessagesController {
 
   @Get()
   findAll(@Query() query: ListMessagesQueryDto) {
-    return this.messagesService.findForAgents(query.status);
+    return this.messagesService.findForAgents(query.status, query.type);
   }
 
   @Patch(':id/status')
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateMessageStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.messagesService.updateStatus(id, dto.status);
+    return this.messagesService.updateStatus(id, dto, user.sub);
   }
 }

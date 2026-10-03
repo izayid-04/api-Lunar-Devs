@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -25,5 +33,13 @@ export class MessagesController {
   @Get('mine')
   findMine(@CurrentUser() user: AuthenticatedUser) {
     return this.messagesService.findMine(user.sub);
+  }
+
+  @Get('mine/:id')
+  findMineOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.messagesService.findMineOne(user.sub, id);
   }
 }

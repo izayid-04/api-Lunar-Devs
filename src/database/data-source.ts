@@ -12,6 +12,7 @@ import { Notification } from '../notifications/entities/notification.entity.js';
 import { LoginAttempt } from '../auth/entities/login-attempt.entity.js';
 import { AppointmentSlot } from '../appointments/entities/appointment-slot.entity.js';
 import { Appointment } from '../appointments/entities/appointment.entity.js';
+import { MessageStatusHistory } from '../messages/entities/message-status-history.entity.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,7 @@ export const dataSourceOptions: DataSourceOptions = {
     HealthCheck,
     User,
     CitizenMessage,
+    MessageStatusHistory,
     MunicipalService,
     Announcement,
     Alert,
