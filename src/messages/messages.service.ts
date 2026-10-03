@@ -147,6 +147,40 @@ export class MessagesService {
     return this.toPublic(message);
   }
 
+  // F52 : GET /messages/public - signalements visibles par les citoyens connectés pour soutenir les signalements des autres
+  async findPublicIncidents(currentUserId: number): Promise<Array<Omit<PublicMessage, 'history'> & { supportedByMe: boolean; isMine: boolean }>> {
+    const messages = await this.repository.find({
+      where: { type: MessageType.SIGNALEMENT },
+      order: { createdAt: 'DESC' },
+    });
+
+    const supportRepo = this.dataSource.getRepository(MessageSupport);
+    const userSupports = await supportRepo.find({
+      where: { userId: currentUserId },
+    });
+    const supportedMessageIds = new Set(userSupports.map((s) => s.messageId));
+
+    return messages.map((m) => {
+      const pub = this.toPublic(m);
+      return {
+        id: pub.id,
+        reference: pub.reference,
+        type: pub.type,
+        subject: pub.subject,
+        body: pub.body,
+        category: pub.category,
+        district: pub.district,
+        preciseLocation: pub.preciseLocation,
+        status: pub.status,
+        supportCount: pub.supportCount,
+        createdAt: pub.createdAt,
+        updatedAt: pub.updatedAt,
+        supportedByMe: supportedMessageIds.has(m.id),
+        isMine: m.authorId === currentUserId,
+      };
+    });
+  }
+
   // F52 : Soutenir un signalement/message existant (toggle ou vote)
   async toggleSupport(
     messageId: number,
@@ -159,6 +193,10 @@ export class MessagesService {
       const message = await messageRepo.findOne({ where: { id: messageId } });
       if (!message) {
         throw new NotFoundException('Message non trouvé');
+      }
+
+      if (message.authorId === userId) {
+        throw new BadRequestException('Vous ne pouvez pas soutenir votre propre demande');
       }
 
       const existingSupport = await supportRepo.findOne({

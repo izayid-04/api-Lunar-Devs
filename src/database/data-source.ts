@@ -17,6 +17,7 @@ import { MessageSupport } from '../messages/entities/message-support.entity.js';
 import { AuditLog } from '../audit/entities/audit-log.entity.js';
 import { TransportLine } from '../transports/entities/transport-line.entity.js';
 import { PrivacyInquiry } from '../privacy/entities/privacy-inquiry.entity.js';
+import { KnownDevice } from '../auth/entities/known-device.entity.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,7 @@ export const dataSourceOptions: DataSourceOptions = {
     AuditLog,
     TransportLine,
     PrivacyInquiry,
+    KnownDevice,
   ],
   migrations: [join(currentDir, 'migrations', '*{.ts,.js}')],
   synchronize: false,

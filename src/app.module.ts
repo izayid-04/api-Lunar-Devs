@@ -20,6 +20,10 @@ import { AppointmentsModule } from './appointments/appointments.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { TransportsModule } from './transports/transports.module.js';
 import { PrivacyModule } from './privacy/privacy.module.js';
+import { ParticipationModule } from './participation/participation.module.js';
+import { ServiceFeedbackModule } from './service-feedback/service-feedback.module.js';
+import { PartnersModule } from './partners/partners.module.js';
+import { SimilarRequestsModule } from './similar-requests/similar-requests.module.js';
 
 @Module({
   imports: [
@@ -50,6 +54,10 @@ import { PrivacyModule } from './privacy/privacy.module.js';
     AppointmentsModule,
     TransportsModule,
     PrivacyModule,
+    ParticipationModule,
+    ServiceFeedbackModule,
+    PartnersModule,
+    SimilarRequestsModule,
   ],
   controllers: [
     AppController,
@@ -60,3 +68,4 @@ import { PrivacyModule } from './privacy/privacy.module.js';
   providers: [AppService],
 })
 export class AppModule {}
+

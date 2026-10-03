@@ -9,6 +9,10 @@ import { MeController } from './me.controller.js';
 import { RolesGuard } from './roles.guard.js';
 import { LoginAttempt } from './entities/login-attempt.entity.js';
 import { LoginAttemptsService } from './login-attempts.service.js';
+import { KnownDevice } from './entities/known-device.entity.js';
+
+import { NotificationsModule } from '../notifications/notifications.module.js';
+import { AuditModule } from '../audit/audit.module.js';
 
 if (!process.env.JWT_SECRET) {
   console.warn(
@@ -23,8 +27,10 @@ if (!process.env.JWT_SECRET) {
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([LoginAttempt]),
+    TypeOrmModule.forFeature([LoginAttempt, KnownDevice]),
     UsersModule,
+    NotificationsModule,
+    AuditModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,

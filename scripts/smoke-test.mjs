@@ -42,6 +42,7 @@ async function request(path, options = {}, retries = 2) {
   const url = `${baseUrl}${path}`;
   const headers = {
     'Content-Type': 'application/json',
+    'User-Agent': 'SmokeTestRunner/1.0 (Linux; x86_64)',
     ...(options.headers || {}),
   };
   await sleep(150); // Léger espacement pour respecter le serveur Apache/Passenger
@@ -146,12 +147,69 @@ async function run() {
   const rPatchMe = await request('/me', {
     method: 'PATCH',
     headers: authH(citizenToken),
-    body: { preferredLanguage: 'fr' },
+    body: { preferredLanguage: 'fr', firstName: 'CitoyenModifie', lastName: 'DemoModifie' },
   });
-  record('PATCH /me', 'mise à jour profil (200)', 200, rPatchMe.status);
+  record('PATCH /me', 'mise à jour profil avec prénom et nom (200)', 200, rPatchMe.status);
+  record('PATCH /me', 'nom bien pris en compte', 'DemoModifie', rPatchMe.data?.lastName);
+
+  // Validation : non vide
+  const rPatchMeEmpty = await request('/me', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { firstName: '' },
+  });
+  record('PATCH /me', 'prénom vide refusé (400)', 400, rPatchMeEmpty.status);
+
+  // Remise en place du nom initial
+  await request('/me', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { firstName: 'Citoyen', lastName: 'Demo' },
+  });
 
   const rSecurityMine = await request('/me/security', { headers: authH(citizenToken) });
   record('GET /me/security', 'audit personnel (200)', 200, rSecurityMine.status);
+  const hasDevicesField = Array.isArray(rSecurityMine.data?.devices);
+  record('GET /me/security', 'appareils connus retournés (F54)', true, hasDevicesField);
+
+  // Test F54 - Détection nouvel appareil vs appareil déjà connu
+  const testDeviceEmail = `device.test.${Date.now()}@novaterra.local`;
+  const rRegDevice = await request('/auth/register', {
+    method: 'POST',
+    headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)' },
+    body: {
+      email: testDeviceEmail,
+      password: 'DeviceTest123!',
+      firstName: 'Device',
+      lastName: 'Tester',
+    },
+  });
+  record('POST /auth/register', 'création compte test device', 201, rRegDevice.status);
+
+  // Première connexion avec le même appareil -> aucun nouvel appareil, pas de notification de sécurité
+  const rLoginSameDevice = await request('/auth/login', {
+    method: 'POST',
+    headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)' },
+    body: { email: testDeviceEmail, password: 'DeviceTest123!' },
+  });
+  const deviceToken = rLoginSameDevice.data?.accessToken;
+  const rNotifsSame = await request('/notifications', { headers: authH(deviceToken) });
+  const hasSecurityAlertSame = Array.isArray(rNotifsSame.data) && rNotifsSame.data.some(n => n.type === 'security');
+  record('POST /auth/login', 'appareil déjà connu -> pas de notification de sécurité (F54)', false, hasSecurityAlertSame);
+
+  // Deuxième connexion depuis un NOUVEL appareil -> doit créer une notification de sécurité
+  await request('/auth/login', {
+    method: 'POST',
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' },
+    body: { email: testDeviceEmail, password: 'DeviceTest123!' },
+  });
+  const rNotifsNew = await request('/notifications', { headers: authH(deviceToken) });
+  const hasSecurityAlertNew = Array.isArray(rNotifsNew.data) && rNotifsNew.data.some(n => n.type === 'security');
+  record('POST /auth/login', 'nouvel appareil -> notification de sécurité créée (F54)', true, hasSecurityAlertNew);
+
+  const rSecurityDeviceUser = await request('/me/security', { headers: authH(deviceToken) });
+  const deviceCount = rSecurityDeviceUser.data?.devices?.length || 0;
+  record('GET /me/security', 'deux appareils distincts enregistrés (F54)', true, deviceCount >= 2);
 
   const rSecurityMineNoAuth = await request('/me/security');
   record('GET /me/security', 'sans jeton (401)', 401, rSecurityMineNoAuth.status);
@@ -323,6 +381,15 @@ async function run() {
   });
   record('POST /messages', 'agent refusé (403)', 403, rPostMsgAgent.status);
 
+  const rMsgPublicNoAuth = await request('/messages/public');
+  record('GET /messages/public', 'sans jeton (401)', 401, rMsgPublicNoAuth.status);
+
+  const rMsgPublic = await request('/messages/public', { headers: authH(citizenToken) });
+  record('GET /messages/public', 'citoyen connecté (200)', 200, rMsgPublic.status);
+
+  const rMsgPublicAgent = await request('/messages/public', { headers: authH(agentToken) });
+  record('GET /messages/public', 'agent refusé (403)', 403, rMsgPublicAgent.status);
+
   const rMsgMine = await request('/messages/mine', { headers: authH(citizenToken) });
   record('GET /messages/mine', 'citoyen connecté (200)', 200, rMsgMine.status);
 
@@ -330,11 +397,12 @@ async function run() {
     const rMsgMineOne = await request(`/messages/mine/${createdMsgId}`, { headers: authH(citizenToken) });
     record('GET /messages/mine/:id', 'citoyen propriétaire (200)', 200, rMsgMineOne.status);
 
-    const rMsgSupport = await request(`/messages/${createdMsgId}/support`, {
+    // F52 : Interdiction de soutenir sa propre demande -> 400 attendu
+    const rMsgSupportSelf = await request(`/messages/${createdMsgId}/support`, {
       method: 'POST',
       headers: authH(citizenToken),
     });
-    record('POST /messages/:id/support', 'citoyen soutien (200)', 200, rMsgSupport.status);
+    record('POST /messages/:id/support', 'refus soutien propre demande (400)', 400, rMsgSupportSelf.status);
   }
 
   const rMsgMine404 = await request('/messages/mine/999999', { headers: authH(citizenToken) });

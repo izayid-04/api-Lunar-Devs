@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { LoginAttempt } from './entities/login-attempt.entity.js';
+import { KnownDevice } from './entities/known-device.entity.js';
 
 @Injectable()
 export class LoginAttemptsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    @InjectRepository(KnownDevice)
+    private readonly knownDeviceRepository: Repository<KnownDevice>,
+  ) {}
 
   private get repository() {
     return this.dataSource.getRepository(LoginAttempt);
@@ -55,8 +61,8 @@ export class LoginAttemptsService {
     return { isLocked: false, lockedUntil: null };
   }
 
-  async getMyRecentAttempts(email: string) {
-    const [recentAttempts, lastSuccessful] = await Promise.all([
+  async getMyRecentAttempts(email: string, userId?: number) {
+    const [recentAttempts, lastSuccessful, knownDevices] = await Promise.all([
       this.repository.find({
         where: { email },
         order: { createdAt: 'DESC' },
@@ -66,6 +72,12 @@ export class LoginAttemptsService {
         where: { email, success: true },
         order: { createdAt: 'DESC' },
       }),
+      userId
+        ? this.knownDeviceRepository.find({
+            where: { userId },
+            order: { lastSeenAt: 'DESC' },
+          })
+        : Promise.resolve([]),
     ]);
 
     const recentFailures = recentAttempts.filter((a) => !a.success);
@@ -73,6 +85,13 @@ export class LoginAttemptsService {
     return {
       lastLoginAt: lastSuccessful ? lastSuccessful.createdAt : null,
       lastLoginIp: lastSuccessful ? lastSuccessful.ip : null,
+      devices: knownDevices.map((d) => ({
+        id: d.id,
+        label: d.label,
+        firstSeenAt: d.firstSeenAt,
+        lastSeenAt: d.lastSeenAt,
+        lastIp: d.lastIp,
+      })),
       recentFailures: recentFailures.map((f) => ({
         id: f.id,
         ip: f.ip,

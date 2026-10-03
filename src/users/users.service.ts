@@ -108,6 +108,8 @@ export class UsersService {
   async updateProfile(
     id: number,
     patch: {
+      firstName?: string;
+      lastName?: string;
       district?: string;
       preferredLanguage?: string;
       isVulnerable?: boolean;
@@ -118,6 +120,8 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    if (patch.firstName !== undefined) user.firstName = patch.firstName.trim();
+    if (patch.lastName !== undefined) user.lastName = patch.lastName.trim();
     if (patch.district !== undefined) user.district = patch.district;
     if (patch.preferredLanguage !== undefined) {
       user.preferredLanguage = patch.preferredLanguage;

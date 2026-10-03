@@ -32,6 +32,11 @@ export class MessagesController {
     return this.messagesService.create(user.sub, dto);
   }
 
+  @Get('public')
+  findPublic(@CurrentUser() user: AuthenticatedUser) {
+    return this.messagesService.findPublicIncidents(user.sub);
+  }
+
   @Get('mine')
   findMine(@CurrentUser() user: AuthenticatedUser) {
     return this.messagesService.findMine(user.sub);

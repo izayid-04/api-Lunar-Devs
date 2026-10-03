@@ -550,6 +550,124 @@ export async function seedTransports(dataSource: DataSource): Promise<void> {
 
   await repo.save(repo.create(defaultLines));
   console.log('Seeded municipal transport lines.');
+
+  await seedParticipationAndPartners(dataSource);
 }
+
+export async function seedParticipationAndPartners(dataSource: DataSource): Promise<void> {
+  // 1. Seed 4 Projects
+  const { Project, ProjectStatus } = await import('../participation/entities/project.entity.js');
+  const { Consultation } = await import('../participation/entities/consultation.entity.js');
+  const projectRepo = dataSource.getRepository(Project);
+  const consultationRepo = dataSource.getRepository(Consultation);
+
+  const existingProjectsCount = await projectRepo.count();
+  if (existingProjectsCount === 0) {
+    const projectsData = [
+      {
+        title: 'Végétalisation du Dôme Central',
+        description: 'Implantation d\'espaces verts suspendus et d\'un réseau de brumisateurs bio-régénérants pour améliorer la qualité de l\'air et le confort thermique dans le quartier central.',
+        district: DISTRICTS[0], // Centre-Ville
+        status: ProjectStatus.EN_COURS,
+        startDate: '2026-09-01',
+        endDate: '2027-03-31',
+        consultation: {
+          question: 'Quel aménagement végétal prioritaire souhaitez-vous installer sous la verrière ?',
+          options: ['Jardins partagés suspendus', 'Forêt urbaine de palmiers régénérants', 'Bassin d\'eau filtrée et allées ombragées'],
+          endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000), // In 30 days
+        },
+      },
+      {
+        title: 'Modernisation des Écluses Portuaires',
+        description: 'Renforcement des digues d\'amarrage et automatisation des sas pressurisés du Port Stellaire pour fluidifier l\'arrivée des cargos de ravitaillement.',
+        district: DISTRICTS[1], // Port Stellaire
+        status: ProjectStatus.EN_COURS,
+        startDate: '2026-08-15',
+        endDate: '2026-12-15',
+        consultation: {
+          question: 'Comment optimiser les flux de circulation des piétons le long des quais ?',
+          options: ['Passerelle haute vitrée', 'Trottoirs roulants solaires', 'Priorité totale aux navettes douces'],
+          endDate: new Date(Date.now() + 14 * 24 * 3600 * 1000), // In 14 days
+        },
+      },
+      {
+        title: 'Parc Solaire et Éolien des Dunes',
+        description: 'Déploiement d\'un parc de captage d\'énergie renouvelable mixte exploitant les vents thermiques et le rayonnement solaire dans les Dunes.',
+        district: DISTRICTS[2], // Quartier des Dunes
+        status: ProjectStatus.PROPOSE,
+        startDate: '2027-01-10',
+        endDate: '2027-09-30',
+        consultation: {
+          question: 'À quel usage affecter l\'énergie excédentaire produite localement ?',
+          options: ['Climatisation municipale gratuite', 'Éclairage public permanent', 'Recharge libre des navettes électriques'],
+          endDate: new Date(Date.now() + 45 * 24 * 3600 * 1000), // In 45 days
+        },
+      },
+      {
+        title: 'Réseau Sentiers Panoramiques des Crêtes',
+        description: 'Création d\'itinéraires piétons sécurisés équipés de points d\'observation astronomique sur les Hauts de Nova.',
+        district: DISTRICTS[3], // Hauts de Nova
+        status: ProjectStatus.TERMINE,
+        startDate: '2026-01-15',
+        endDate: '2026-08-30',
+      },
+    ];
+
+    for (const p of projectsData) {
+      const { consultation, ...pData } = p;
+      const createdProject = await projectRepo.save(projectRepo.create(pData));
+      if (consultation) {
+        await consultationRepo.save(
+          consultationRepo.create({
+            project: createdProject,
+            projectId: createdProject.id,
+            question: consultation.question,
+            options: consultation.options,
+            endDate: consultation.endDate,
+          }),
+        );
+      }
+    }
+    console.log('Seeded 4 participation projects with consultations.');
+  }
+
+  // 2. Seed 3 Associations (Partners)
+  const { Partner } = await import('../partners/entities/partner.entity.js');
+  const partnerRepo = dataSource.getRepository(Partner);
+
+  const existingPartnersCount = await partnerRepo.count();
+  if (existingPartnersCount === 0) {
+    const partnersData = [
+      {
+        name: 'Éco-Pionniers de Nova Terra',
+        description: 'Association citoyenne engagée pour le recyclage des biomatériaux, l\'agriculture urbaine et la préservation de la biosphère locale.',
+        address: '12 Avenue de l\'Harmonie',
+        district: DISTRICTS[0], // Centre-Ville
+        openingHours: 'Mar-Sam 9h-17h',
+        contact: '+269 773 80 01 · contact@ecopionniers.org',
+      },
+      {
+        name: 'Solidarité Stellaire & Entraide',
+        description: 'Accompagnement social des nouveaux arrivants, permanence d\'aide aux démarches et distribution de repas solidaires.',
+        address: '5 Rue du Quai Sud',
+        district: DISTRICTS[1], // Port Stellaire
+        openingHours: 'Lun-Ven 8h30-16h30',
+        contact: '+269 773 80 02 · entraide@solidarite-stellaire.org',
+      },
+      {
+        name: 'Atelier Sciences & Jeunesse',
+        description: 'Club d\'initiation aux sciences spatiales, robotique et observation télescopique pour les jeunes de la colonie.',
+        address: '28 Boulevard des Sables',
+        district: DISTRICTS[2], // Quartier des Dunes
+        openingHours: 'Mer 14h-18h, Sam 10h-18h',
+        contact: '+269 773 80 03 · sciences@jeunesse-nova.org',
+      },
+    ];
+
+    await partnerRepo.save(partnerRepo.create(partnersData));
+    console.log('Seeded 3 partner associations.');
+  }
+}
+
 
 

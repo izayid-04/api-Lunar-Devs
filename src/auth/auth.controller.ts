@@ -30,8 +30,10 @@ export class AuthController {
   @Post('auth/register')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 reg/min per IP
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  register(@Body() dto: RegisterDto, @Req() req: Request) {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || '';
+    return this.authService.register(dto, ip, userAgent);
   }
 
   @Post('auth/login')
@@ -40,13 +42,14 @@ export class AuthController {
   @Throttle({ default: { limit: 15, ttl: 60000 } }) // 15 login attempts/min per IP
   login(@Body() dto: LoginDto, @Req() req: Request) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    return this.authService.login(dto, ip);
+    const userAgent = req.headers['user-agent'] || '';
+    return this.authService.login(dto, ip, userAgent);
   }
 
   @Get('me/security')
   @UseGuards(JwtAuthGuard)
   getMySecurityInfo(@CurrentUser() user: AuthenticatedUser) {
-    return this.loginAttemptsService.getMyRecentAttempts(user.email);
+    return this.loginAttemptsService.getMyRecentAttempts(user.email, user.sub);
   }
 
   @Get('agent/security/targeted-accounts')
