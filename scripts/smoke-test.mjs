@@ -122,9 +122,10 @@ async function run() {
   console.log(`\n--- Authentification & Profil ---`);
   record('POST /auth/login', 'cas normal', 200, loginResCitizen.status);
   
+  const randomEmail = `wrong-${Date.now()}@novaterra.local`;
   const rLoginBad = await request('/auth/login', {
     method: 'POST',
-    body: { email: 'wrong@novaterra.local', password: 'WrongPassword!' },
+    body: { email: randomEmail, password: 'WrongPassword!' },
   });
   record('POST /auth/login', 'identifiants invalides (401)', 401, rLoginBad.status);
 
