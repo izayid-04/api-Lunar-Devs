@@ -17,6 +17,9 @@ import { WebcupModule } from './webcup/webcup.module.js';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { AppointmentsModule } from './appointments/appointments.module.js';
+import { AuditModule } from './audit/audit.module.js';
+import { TransportsModule } from './transports/transports.module.js';
+import { PrivacyModule } from './privacy/privacy.module.js';
 
 @Module({
   imports: [
@@ -34,6 +37,7 @@ import { AppointmentsModule } from './appointments/appointments.module.js';
       // way — GET /health/db reports the actual DB status).
       manualInitialization: true,
     }),
+    AuditModule,
     UsersModule,
     AuthModule,
     MessagesModule,
@@ -44,6 +48,8 @@ import { AppointmentsModule } from './appointments/appointments.module.js';
     AlertsModule,
     NotificationsModule,
     AppointmentsModule,
+    TransportsModule,
+    PrivacyModule,
   ],
   controllers: [
     AppController,

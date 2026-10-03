@@ -21,6 +21,20 @@ export class NotificationsService {
     return this.dataSource.getRepository(User);
   }
 
+  async create(data: {
+    user: User;
+    type: NotificationType;
+    title: string;
+    link?: string;
+  }): Promise<Notification> {
+    const notif = new Notification();
+    notif.user = data.user;
+    notif.type = data.type;
+    notif.title = data.title;
+    notif.link = data.link ?? '';
+    return this.repository.save(notif);
+  }
+
   async findForUser(userId: number): Promise<Notification[]> {
     await this.generateAppointmentReminders(userId);
 

@@ -103,4 +103,26 @@ Détail complet des routes dans [`docs/API.md`](./API.md).
 | **F50** | Métriques et statistiques d'activité dans le dashboard | `GET /agent/dashboard` enrichi avec répartition des signalements par catégorie et par quartier, nombre total de soutiens citoyens cumulés, alertes actives et prochains rendez-vous municipaux. |
 | **F52** | Soutien citoyen aux signalements publics | Entité `MessageSupport`, endpoint `POST /messages/:id/support` (vote/soutien citoyen avec compteur unitaire `supportCount`), et tri par popularité `GET /agent/messages?sort=supports` pour prioriser les interventions de terrain. Migration `1791110000000-AddMessageSupportsAndNotificationType.ts`. |
 
+## Chantier 7 — Traçabilité et journal d'audit administratif (F47, F48)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F47** | Traçabilité des actions réalisées sur la plateforme | Entité `AuditLog` (`id`, `action`, `entityType`, `entityId`, `details`, `ipAddress`, `author`, `createdAt`). Enregistrement automatique de toutes les opérations administratives : gestion des demandes citoyennes, création/modification/suppression d'alertes, activation/désactivation et suppressions de comptes, mise à jour des disponibilités de services. Migration `1791120000000-CreateAuditLogsTable.ts`. |
+| **F48** | Consultation de l'historique par les agents (« qui a modifié quoi ») | `GET /agent/audit-logs` : consultation paginée réservée `agent`/`admin` avec filtres par `action`, `entityType`, `authorId`. Restitution complète des modifications avec nom et email de l'agent responsable. |
+
+## Chantier 8 — Transports municipaux (F36)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F36** | Consultation et gestion des transports municipaux | Entité `TransportLine` (`code`, `name`, `type`, `origin`, `destination`, `status`, `statusMessage`, `frequency`, `operatingHours`, `stops`, `nextDepartures`). `GET /transports` (recherche ?q= et filtre ?type=), `GET /transports/:codeOrId`, et `PATCH /transports/:codeOrId/status` avec traçabilité dans le journal d'audit. Seed automatique des lignes majeures (navette, bus express, tramway, batelier). Migration `1791130000000-CreateTransportLinesTable.ts`. |
+
+## Chantier 9 — Protection des données & Inquiétudes citoyennes (F51)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F51** | Remontée et gestion des inquiétudes sur les données personnelles | Entité `PrivacyInquiry` (`reference`, `type`, `subject`, `description`, `status`, `responseNote`, `respondedAt`, `citizen`, `respondedBy`). `POST /privacy/inquiries` pour déposer une demande ou inquiétude avec accusé de réception et référence unique (`RGPD-2026-XXXX`), `GET /privacy/inquiries/mine` pour le citoyen, `GET /agent/privacy/inquiries` et `PATCH /agent/privacy/inquiries/:id/status` pour les agents avec notification citoyenne et journalisation d'audit automatique. Migration `1791140000000-CreatePrivacyInquiriesTable.ts`. |
+
 Détail complet des routes dans [`docs/API.md`](./API.md).
+
+
+

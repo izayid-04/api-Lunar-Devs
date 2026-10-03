@@ -14,6 +14,7 @@ import {
   seedDemoCitizen,
   seedDemoUsers,
   seedMunicipalServices,
+  seedTransports,
 } from './database/seed.js';
 
 async function bootstrap() {
@@ -94,6 +95,7 @@ async function bootstrap() {
       await seedAnnouncements(dataSource);
       await seedAlerts(dataSource);
       await seedAppointmentSlots(dataSource);
+      await seedTransports(dataSource);
     } catch (seedErr) {
       console.error(
         'Seeding failed:',

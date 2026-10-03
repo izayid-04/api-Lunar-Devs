@@ -34,6 +34,6 @@ export class AgentCitizensController {
     @Body() dto: UpdateCitizenStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.usersService.updateCitizenStatus(id, dto.isActive, user.role);
+    return this.usersService.updateCitizenStatus(id, dto.isActive, user.sub);
   }
 }

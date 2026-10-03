@@ -81,8 +81,11 @@ export class AlertsController {
   @Patch(':id/terminate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.AGENT, UserRole.ADMIN)
-  async terminate(@Param('id', ParseIntPipe) id: number) {
-    return this.alertsService.terminate(id);
+  async terminate(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.alertsService.terminate(id, user.sub);
   }
 
   @Patch(':id')
@@ -91,16 +94,20 @@ export class AlertsController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateAlertDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.alertsService.update(id, dto);
+    return this.alertsService.update(id, dto, user.sub);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    await this.alertsService.remove(id);
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.alertsService.remove(id, user.sub);
   }
 }
 

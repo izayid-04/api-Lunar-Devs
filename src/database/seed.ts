@@ -5,6 +5,11 @@ import { DISTRICTS } from '../common/districts.js';
 import { MunicipalService } from '../services/entities/municipal-service.entity.js';
 import { User } from '../users/entities/user.entity.js';
 import { UserRole } from '../users/user-role.enum.js';
+import {
+  TransportLine,
+  TransportLineStatus,
+  TransportType,
+} from '../transports/entities/transport-line.entity.js';
 
 const BCRYPT_SALT_ROUNDS = 10;
 
@@ -481,6 +486,70 @@ export async function seedAppointmentSlots(dataSource: DataSource): Promise<void
   }
 
   console.log(`Seeded ${created} appointment slot(s) for the next 7 days.`);
+}
+
+export async function seedTransports(dataSource: DataSource): Promise<void> {
+  const repo = dataSource.getRepository(TransportLine);
+  const count = await repo.count();
+  if (count > 0) return;
+
+  const defaultLines = [
+    {
+      code: 'NAV-1',
+      name: 'Navette Éco-Centre',
+      type: TransportType.NAVETTE,
+      origin: 'Port Stellaire',
+      destination: 'Centre Ville',
+      status: TransportLineStatus.NORMAL,
+      statusMessage: 'Circulation fluide',
+      frequency: 'Toutes les 8 min',
+      operatingHours: '05:30 - 23:30',
+      stops: JSON.stringify(['Port Stellaire', 'Gare Maritime', 'Place Centrale', 'Hôtel de Ville']),
+      nextDepartures: JSON.stringify(['10:15', '10:23', '10:31', '10:39']),
+    },
+    {
+      code: 'L4',
+      name: 'Ligne Express Quartier Nord',
+      type: TransportType.BUS,
+      origin: 'Quartier Nord',
+      destination: 'Campus Scientifique',
+      status: TransportLineStatus.NORMAL,
+      statusMessage: 'Service normal',
+      frequency: 'Toutes les 12 min',
+      operatingHours: '06:00 - 22:00',
+      stops: JSON.stringify(['Quartier Nord', 'Avenue des Étoiles', 'Hôpital Municipal', 'Campus']),
+      nextDepartures: JSON.stringify(['10:10', '10:22', '10:34', '10:46']),
+    },
+    {
+      code: 'T1',
+      name: 'Tramway de la Baie',
+      type: TransportType.TRAM,
+      origin: 'Plage du Levant',
+      destination: 'Technopôle Nova',
+      status: TransportLineStatus.NORMAL,
+      statusMessage: 'Circulation conforme',
+      frequency: 'Toutes les 6 min',
+      operatingHours: '05:00 - 00:30',
+      stops: JSON.stringify(['Plage Levant', 'Baie Ouest', 'Cité Administrative', 'Technopôle']),
+      nextDepartures: JSON.stringify(['10:12', '10:18', '10:24', '10:30']),
+    },
+    {
+      code: 'BAT-A',
+      name: 'Navette Fluviale Archipel',
+      type: TransportType.BATELIER,
+      origin: 'Embarcadère Sud',
+      destination: 'Île de l’Énergie',
+      status: TransportLineStatus.NORMAL,
+      statusMessage: 'Départs toutes les 20 min',
+      frequency: 'Toutes les 20 min',
+      operatingHours: '07:00 - 20:00',
+      stops: JSON.stringify(['Embarcadère Sud', 'Quai des Pêcheurs', 'Île de l’Énergie']),
+      nextDepartures: JSON.stringify(['10:20', '10:40', '11:00']),
+    },
+  ];
+
+  await repo.save(repo.create(defaultLines));
+  console.log('Seeded municipal transport lines.');
 }
 
 

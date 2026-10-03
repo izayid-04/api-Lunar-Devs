@@ -669,3 +669,150 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
 - **`502`** si le fournisseur IA renvoie une erreur ou est injoignable.
 - **`403`** pour `citizen`.
 
+---
+
+## Journal d'Audit & Traçabilité Administrative (F47, F48)
+
+Toutes les actions administratives critiques (mises à jour de statut de demandes, activation/désactivation de comptes citoyens, suppressions de comptes, modifications de disponibilité des services, création et gestion des alertes d'urgence) sont consignées de manière immuable avec horodatage, auteur et détails.
+
+### `GET /agent/audit-logs`
+- **Rôle** : `agent`, `admin`.
+- **Query params** (optionnels) :
+  - `action` (string) : filtrer par type d'action (`message_status_updated`, `citizen_account_activated`, `citizen_account_deactivated`, `citizen_account_deleted`, `service_availability_updated`, `alert_created`, `alert_updated`, `alert_terminated`, `alert_deleted`).
+  - `entityType` (string) : filtrer par type d'entité (`CitizenMessage`, `User`, `MunicipalService`, `Alert`).
+  - `authorId` (string/number) : filtrer par auteur de l'action.
+  - `page` (int, défaut `1`).
+  - `limit` (int, défaut `20`, max `100`).
+- **Réponse `200`** :
+  ```json
+  {
+    "items": [
+      {
+        "id": "e2c34d88-75d1-4db8-b570-5ff0b4ff5dbb",
+        "action": "message_status_updated",
+        "entityType": "CitizenMessage",
+        "entityId": "42",
+        "details": "{\"reference\":\"SIG-42\",\"previousStatus\":\"nouveau\",\"newStatus\":\"en_cours\",\"note\":\"Pris en charge par l'équipe voirie\"}",
+        "ipAddress": null,
+        "createdAt": "2026-10-03T16:30:00.000Z",
+        "author": {
+          "id": 1,
+          "firstName": "Alice",
+          "lastName": "Mbaé",
+          "email": "agent@novaterra.gov",
+          "role": "agent"
+        }
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1
+  }
+  ```
+- **`403`** pour `citizen`, **`401`** sans token.
+
+---
+
+## Transports Municipaux (F36)
+
+Horaires, fréquences, arrêts et état du trafic en temps réel pour l'ensemble des transports en commun de Nova Terra (navettes, bus, tramways, liaisons maritimes).
+
+### `GET /transports`
+- **Rôle** : public (pas d'authentification requise).
+- **Query params** (optionnels) :
+  - `type` : `navette` | `bus` | `tram` | `batelier`.
+  - `q` : recherche textuelle sur le nom de la ligne, le code, l'origine ou la destination.
+- **Réponse `200`** :
+  ```json
+  [
+    {
+      "id": 1,
+      "code": "NAV-1",
+      "name": "Navette Éco-Centre",
+      "type": "navette",
+      "origin": "Port Stellaire",
+      "destination": "Centre Ville",
+      "status": "normal",
+      "statusMessage": "Circulation fluide",
+      "frequency": "Toutes les 8 min",
+      "operatingHours": "05:30 - 23:30",
+      "stops": "[\"Port Stellaire\",\"Gare Maritime\",\"Place Centrale\",\"Hôtel de Ville\"]",
+      "nextDepartures": "[\"10:15\",\"10:23\",\"10:31\",\"10:39\"]",
+      "createdAt": "2026-10-03T16:00:00.000Z",
+      "updatedAt": "2026-10-03T16:00:00.000Z"
+    }
+  ]
+  ```
+
+### `GET /transports/:codeOrId`
+- **Rôle** : public.
+- **Réponse `200`** : détails complets de la ligne par son code (`NAV-1`) ou son identifiant numérique (`1`).
+- **`404`** si la ligne n'existe pas.
+
+### `PATCH /transports/:codeOrId/status`
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  {
+    "status": "perturbe",
+    "statusMessage": "Retard de 10 min suite à incident technique sur voie"
+  }
+  ```
+- **Réponse `200`** : ligne mise à jour avec traçabilité automatique dans le journal d'audit (`AuditLog`).
+- **`403`** pour `citizen`.
+
+---
+
+## Protection des Données & Demandes RGPD (F51)
+
+Permet aux citoyens de poser des questions sur l'usage de leurs données ou d'exercer leurs droits (accès, rectification, effacement, opposition), avec accusé de réception, référence unique, historique personnel et traitement suivi par les agents municipaux.
+
+### `POST /privacy/inquiries`
+- **Rôle** : `citizen`.
+- **Corps** :
+  ```json
+  {
+    "type": "explication",
+    "subject": "Inquiétude concernant le traitement de mes données de localisation",
+    "description": "Je souhaite comprendre comment sont utilisées les coordonnées GPS transmises lors d'un signalement d'incident."
+  }
+  ```
+  - `type` : `acces` | `rectification` | `effacement` | `explication` | `opposition` | `autre`.
+- **Réponse `201`** :
+  ```json
+  {
+    "id": 1,
+    "reference": "RGPD-2026-0001",
+    "type": "explication",
+    "subject": "Inquiétude concernant le traitement...",
+    "description": "...",
+    "status": "en_attente",
+    "responseNote": null,
+    "respondedAt": null,
+    "createdAt": "2026-10-03T16:40:00.000Z",
+    "updatedAt": "2026-10-03T16:40:00.000Z"
+  }
+  ```
+- **`403`** pour les agents/admin (réservé aux citoyens connectés).
+
+### `GET /privacy/inquiries/mine`
+- **Rôle** : `citizen`.
+- **Réponse `200`** : liste des demandes RGPD du citoyen connecté triées du plus récent au plus ancien.
+
+### `GET /agent/privacy/inquiries`
+- **Rôle** : `agent`, `admin`.
+- **Query params** (optionnel) : `status` (`en_attente`, `en_cours`, `traitee`, `fermee`).
+- **Réponse `200`** : ensemble des demandes citoyennes avec coordonnées du citoyen et informations de traitement.
+
+### `PATCH /agent/privacy/inquiries/:id/status`
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  {
+    "status": "traitee",
+    "responseNote": "Les données de géolocalisation ne sont utilisées que pour le guidage des équipes de voirie et sont anonymisées après 30 jours."
+  }
+  ```
+- **Réponse `200`** : demande mise à jour. Génère automatiquement une notification citoyenne (`Notification`) et un enregistrement dans le journal d'audit (`AuditLog`).
+

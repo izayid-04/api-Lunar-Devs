@@ -17,6 +17,7 @@ import type { UpdateMessageStatusDto } from './dto/update-message-status.dto.js'
 import { MessageStatus } from './message-status.enum.js';
 import { MessageType } from './message-type.enum.js';
 import { buildMessageReference } from './reference.util.js';
+import { AuditService } from '../audit/audit.service.js';
 
 export interface PublicStatusHistory {
   id: number;
@@ -53,7 +54,10 @@ export type StatusCounts = Record<MessageStatus, number>;
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly auditService: AuditService,
+  ) {}
 
   private get repository() {
     if (!this.dataSource.isInitialized) {
@@ -269,6 +273,21 @@ export class MessagesService {
         });
         await notifRepo.save(notif);
       }
+
+      // F47/F48 : Traçabilité dans le journal d'audit
+      const changedByUser = changedById ? await manager.getRepository(User).findOne({ where: { id: changedById } }) : null;
+      await this.auditService.log({
+        action: 'message_status_updated',
+        entityType: 'CitizenMessage',
+        entityId: String(saved.id),
+        details: {
+          reference: saved.reference,
+          previousStatus,
+          newStatus: dto.status,
+          note: dto.note ?? null,
+        },
+        author: changedByUser,
+      });
 
       return this.toPublic(saved);
     });

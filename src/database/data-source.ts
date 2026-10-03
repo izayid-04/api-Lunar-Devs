@@ -14,6 +14,9 @@ import { AppointmentSlot } from '../appointments/entities/appointment-slot.entit
 import { Appointment } from '../appointments/entities/appointment.entity.js';
 import { MessageStatusHistory } from '../messages/entities/message-status-history.entity.js';
 import { MessageSupport } from '../messages/entities/message-support.entity.js';
+import { AuditLog } from '../audit/entities/audit-log.entity.js';
+import { TransportLine } from '../transports/entities/transport-line.entity.js';
+import { PrivacyInquiry } from '../privacy/entities/privacy-inquiry.entity.js';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +46,9 @@ export const dataSourceOptions: DataSourceOptions = {
     LoginAttempt,
     AppointmentSlot,
     Appointment,
+    AuditLog,
+    TransportLine,
+    PrivacyInquiry,
   ],
   migrations: [join(currentDir, 'migrations', '*{.ts,.js}')],
   synchronize: false,

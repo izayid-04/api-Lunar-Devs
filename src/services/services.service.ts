@@ -7,10 +7,15 @@ import { DataSource } from 'typeorm';
 import { MunicipalService } from './entities/municipal-service.entity.js';
 import { ServiceAvailability } from './service-availability.enum.js';
 import type { ListServicesQueryDto } from './dto/list-services-query.dto.js';
+import { AuditService } from '../audit/audit.service.js';
+import { User } from '../users/entities/user.entity.js';
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly auditService: AuditService,
+  ) {}
 
   private get repository() {
     if (!this.dataSource.isInitialized) {
@@ -79,6 +84,7 @@ export class ServicesService {
       availableAgainAt?: string;
       alternative?: string;
     },
+    actingUserId?: number,
   ): Promise<MunicipalService> {
     const where =
       typeof idOrSlug === 'number' || !isNaN(Number(idOrSlug))
@@ -90,6 +96,7 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
+    const previousAvailability = service.availability;
     service.availability = dto.availability;
     service.availabilityMessage = dto.availabilityMessage ?? null;
     service.availableAgainAt = dto.availableAgainAt
@@ -97,6 +104,26 @@ export class ServicesService {
       : null;
     service.alternative = dto.alternative ?? null;
 
-    return this.repository.save(service);
+    const saved = await this.repository.save(service);
+
+    const author = actingUserId
+      ? await this.dataSource.getRepository(User).findOne({ where: { id: actingUserId } })
+      : null;
+
+    await this.auditService.log({
+      action: 'service_availability_updated',
+      entityType: 'MunicipalService',
+      entityId: String(saved.id),
+      details: {
+        serviceSlug: saved.slug,
+        serviceName: saved.name,
+        previousAvailability,
+        newAvailability: dto.availability,
+        availabilityMessage: dto.availabilityMessage,
+      },
+      author,
+    });
+
+    return saved;
   }
 }

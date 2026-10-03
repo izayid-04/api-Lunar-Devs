@@ -10,6 +10,7 @@ import { AlertSeverity, AlertTarget } from './alert-enums.js';
 import type { CreateAlertDto } from './dto/create-alert.dto.js';
 import type { UpdateAlertDto } from './dto/update-alert.dto.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { AuditService } from '../audit/audit.service.js';
 
 export type PublicAlert = Omit<Alert, 'author'>;
 
@@ -18,6 +19,7 @@ export class AlertsService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
   ) {}
 
   private get repository() {
@@ -97,10 +99,24 @@ export class AlertsService {
     // Notify citizens concerned asynchronously
     void this.notificationsService.notifyForAlert(saved);
 
+    const author = await this.dataSource.getRepository(User).findOne({ where: { id: authorId } });
+    await this.auditService.log({
+      action: 'alert_created',
+      entityType: 'Alert',
+      entityId: String(saved.id),
+      details: {
+        title: saved.title,
+        severity: saved.severity,
+        target: saved.target,
+        targetDistrict: saved.targetDistrict,
+      },
+      author,
+    });
+
     return this.toPublic(saved);
   }
 
-  async update(id: number, dto: UpdateAlertDto): Promise<PublicAlert> {
+  async update(id: number, dto: UpdateAlertDto, actingUserId?: number): Promise<PublicAlert> {
     const alert = await this.repository.findOne({ where: { id } });
     if (!alert) {
       throw new NotFoundException('Alert not found');
@@ -125,24 +141,59 @@ export class AlertsService {
     }
 
     const saved = await this.repository.save(alert);
+
+    const author = actingUserId ? await this.dataSource.getRepository(User).findOne({ where: { id: actingUserId } }) : null;
+    await this.auditService.log({
+      action: 'alert_updated',
+      entityType: 'Alert',
+      entityId: String(saved.id),
+      details: {
+        title: saved.title,
+        severity: saved.severity,
+        target: saved.target,
+      },
+      author,
+    });
+
     return this.toPublic(saved);
   }
 
-  async terminate(id: number): Promise<PublicAlert> {
+  async terminate(id: number, actingUserId?: number): Promise<PublicAlert> {
     const alert = await this.repository.findOne({ where: { id } });
     if (!alert) {
       throw new NotFoundException('Alert not found');
     }
     alert.expiresAt = new Date();
     const saved = await this.repository.save(alert);
+
+    const author = actingUserId ? await this.dataSource.getRepository(User).findOne({ where: { id: actingUserId } }) : null;
+    await this.auditService.log({
+      action: 'alert_terminated',
+      entityType: 'Alert',
+      entityId: String(saved.id),
+      details: { title: saved.title },
+      author,
+    });
+
     return this.toPublic(saved);
   }
 
-  async remove(id: number): Promise<void> {
-    const result = await this.repository.delete(id);
-    if (result.affected === 0) {
+  async remove(id: number, actingUserId?: number): Promise<void> {
+    const alert = await this.repository.findOne({ where: { id } });
+    if (!alert) {
       throw new NotFoundException('Alert not found');
     }
+
+    const author = actingUserId ? await this.dataSource.getRepository(User).findOne({ where: { id: actingUserId } }) : null;
+    await this.auditService.log({
+      action: 'alert_deleted',
+      entityType: 'Alert',
+      entityId: String(id),
+      details: { title: alert.title },
+      author,
+    });
+
+    await this.repository.delete(id);
   }
 
   private toPublic(alert: Alert): PublicAlert {

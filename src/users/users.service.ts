@@ -13,6 +13,7 @@ import { UserRole } from './user-role.enum.js';
 import { Appointment } from '../appointments/entities/appointment.entity.js';
 import { AppointmentSlot } from '../appointments/entities/appointment-slot.entity.js';
 import type { ListCitizensQueryDto } from './dto/list-citizens-query.dto.js';
+import { AuditService } from '../audit/audit.service.js';
 
 export type SafeUser = Omit<
   User,
@@ -37,7 +38,10 @@ export interface PaginatedCitizens {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly auditService: AuditService,
+  ) {}
 
   private get repository() {
     if (!this.dataSource.isInitialized) {
@@ -112,6 +116,14 @@ export class UsersService {
       throw new UnauthorizedException('Mot de passe incorrect');
     }
 
+    await this.auditService.log({
+      action: 'citizen_account_deleted',
+      entityType: 'User',
+      entityId: String(userId),
+      details: { email: user.email, name: `${user.firstName} ${user.lastName}` },
+      author: user,
+    });
+
     await this.dataSource.transaction(async (manager) => {
       // 1. Libérer les créneaux des rendez-vous à venir du citoyen
       const apptRepo = manager.getRepository(Appointment);
@@ -175,7 +187,7 @@ export class UsersService {
   async updateCitizenStatus(
     targetUserId: number,
     isActive: boolean,
-    actingUserRole: UserRole,
+    actingUserId: number,
   ): Promise<SafeUser> {
     const targetUser = await this.findById(targetUserId);
     if (!targetUser) {
@@ -190,6 +202,19 @@ export class UsersService {
 
     targetUser.isActive = isActive;
     const saved = await this.repository.save(targetUser);
+
+    const actingUser = await this.findById(actingUserId);
+    await this.auditService.log({
+      action: isActive ? 'citizen_account_activated' : 'citizen_account_deactivated',
+      entityType: 'User',
+      entityId: String(targetUserId),
+      details: {
+        citizenEmail: targetUser.email,
+        isActive,
+      },
+      author: actingUser ?? null,
+    });
+
     return this.toSafe(saved);
   }
 
