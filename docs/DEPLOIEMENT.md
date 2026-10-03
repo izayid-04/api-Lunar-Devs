@@ -77,14 +77,21 @@ dossier de ce type est introduit dans le projet — un déploiement normal
 
 Le front Next.js (`lunardevs.lescomores.webcup.hodi.cloud`) doit pouvoir
 appeler l'API sur un domaine différent (`api.lunardevs.lescomores.webcup.hodi.cloud`).
-`src/main.ts` active CORS pour l'origine définie par `FRONT_URL` :
+`src/main.ts` active CORS avec une règle d'origine dynamique :
 
-- Si `FRONT_URL` est définie, seules cette (ou ces, séparées par des
-  virgules) origine(s) sont autorisées.
-- Si elle n'est pas définie (ex. run local rapide sans `.env`), toutes les
-  origines sont autorisées avec un avertissement dans les logs — pratique
-  en dev, mais `FRONT_URL` **doit** être définie dans Hodifly en
-  production.
+- `FRONT_URL` liste **plusieurs origines, séparées par des virgules** —
+  c'est la valeur par défaut dans `.env`/`.env.example` :
+  `FRONT_URL=https://lunardevs.lescomores.webcup.hodi.cloud,http://localhost:3000,http://localhost:3001`.
+  Pour ajouter une origine (ex. une URL Vercel plus tard) : l'ajouter
+  dans cette liste (dans Hodifly en prod, dans `.env` en local), aucun
+  changement de code.
+- En plus de cette liste, **`http://localhost:<n'importe quel port>`
+  est toujours autorisé** par le code (`src/main.ts`), même s'il n'est
+  pas dans `FRONT_URL` — un filet de sécurité si jamais le port du front
+  local change.
+- Si `FRONT_URL` n'est pas définie du tout, toutes les origines sont
+  autorisées (avertissement dans les logs) — dev uniquement ;
+  `FRONT_URL` **doit** être définie dans Hodifly en production.
 
 ## 4. Route de test `GET /health`
 
@@ -417,7 +424,7 @@ En plus des variables listées en §2 et §6 :
 
 | Variable | Valeur |
 | -------- | ------ |
-| `JWT_SECRET` | Une valeur longue et aléatoire — **jamais** la même qu'en dev. Quiconque la connaît peut forger un token admin valide. |
+| `JWT_SECRET` | Une valeur longue et aléatoire — **jamais** la même qu'en dev. Quiconque la connaît peut forger un token admin valide. À générer avec : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` (pas besoin d'aller en chercher un ailleurs). |
 | `DEMO_AGENT_EMAIL`, `DEMO_AGENT_PASSWORD` | Identifiants du compte agent de démo pour le jury. |
 | `DEMO_ADMIN_EMAIL`, `DEMO_ADMIN_PASSWORD` | Identifiants du compte admin de démo pour le jury. |
 

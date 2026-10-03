@@ -7,7 +7,10 @@ import { DataSource } from 'typeorm';
 import { User } from './entities/user.entity.js';
 import { UserRole } from './user-role.enum.js';
 
-export type SafeUser = Omit<User, 'passwordHash'>;
+// `id` is serialized as a string on the wire (consumers, e.g. the
+// frontend, expect a string id) even though it's a numeric auto-increment
+// column in MySQL.
+export type SafeUser = Omit<User, 'passwordHash' | 'id'> & { id: string };
 
 export interface CreateUserInput {
   email: string;
@@ -55,7 +58,7 @@ export class UsersService {
   }
 
   toSafe(user: User): SafeUser {
-    const { passwordHash: _passwordHash, ...safe } = user;
-    return safe;
+    const { passwordHash: _passwordHash, id, ...safe } = user;
+    return { ...safe, id: String(id) };
   }
 }

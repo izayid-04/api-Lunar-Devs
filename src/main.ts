@@ -19,15 +19,46 @@ async function bootstrap() {
     }),
   );
 
+  // Any http://localhost:<port> is always allowed, regardless of
+  // FRONT_URL, so a local front dev server works on whatever port it
+  // happens to run on without touching env vars.
+  const LOCALHOST_ORIGIN = /^http:\/\/localhost:\d+$/;
+
+  // Real-world origins (prod front, a Vercel preview URL later, etc.) go
+  // in FRONT_URL as a comma-separated list — add one there, no code
+  // change needed.
   const frontUrl = process.env.FRONT_URL;
-  if (frontUrl) {
-    app.enableCors({ origin: frontUrl.split(',').map((url) => url.trim()) });
-  } else {
+  const configuredOrigins = frontUrl
+    ? frontUrl
+        .split(',')
+        .map((url) => url.trim())
+        .filter(Boolean)
+    : [];
+
+  if (configuredOrigins.length === 0) {
     console.warn(
-      'FRONT_URL is not set: allowing all CORS origins (dev fallback only).',
+      'FRONT_URL is not set: allowing all CORS origins (dev fallback only, plus localhost is always allowed).',
     );
-    app.enableCors({ origin: true });
   }
+
+  app.enableCors({
+    origin(
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) {
+      // No Origin header = not a browser request (curl, server-to-server).
+      if (
+        !origin ||
+        configuredOrigins.length === 0 ||
+        configuredOrigins.includes(origin) ||
+        LOCALHOST_ORIGIN.test(origin)
+      ) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin ${origin} not allowed by CORS`), false);
+    },
+  });
 
   // Connect manually (manualInitialization: true in app.module.ts) so a
   // database outage logs an error instead of crashing the whole process —
