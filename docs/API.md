@@ -46,7 +46,7 @@ validation (`400`, une par champ invalide).
 ## Authentification (Bloc 1)
 
 ### `POST /auth/register`
-- **Rôle** : public.
+- **Rôle** : public (rate-limited à 10 req/min par IP).
 - **Corps** :
   ```json
   { "email": "a@example.com", "password": "MotDePasse123", "firstName": "A", "lastName": "B" }
@@ -58,12 +58,54 @@ validation (`400`, une par champ invalide).
   ```
 - **`409`** si l'email est déjà utilisé.
 - **`400`** si validation échoue (email invalide, mot de passe < 8 caractères, etc.).
+- **`429`** si la limite de débit est dépassée.
 
 ### `POST /auth/login`
-- **Rôle** : public.
+- **Rôle** : public (rate-limited à 15 req/min par IP).
 - **Corps** : `{ "email": "...", "password": "..." }`
 - **Réponse `200`** : `{ "accessToken": "eyJ..." }` — JWT valide 1 jour.
-- **`401`** si identifiants invalides (message générique, ne révèle pas si l'email existe).
+- **`401`** si identifiants invalides (message générique). Chaque échec est comptabilisé.
+- **`403`** si le compte est verrouillé (après 5 tentatives infructueuses consécutives, verrouillé pendant 15 minutes) :
+  ```json
+  {
+    "statusCode": 403,
+    "error": "Forbidden",
+    "message": "Compte temporairement verrouillé suite à 5 tentatives infructueuses. Déverrouillage prévu à 2026-10-03T13:30:00.000Z.",
+    "lockedUntil": "2026-10-03T13:30:00.000Z"
+  }
+  ```
+- **`429`** si la limite de débit est dépassée.
+
+### `GET /me/security` (F37)
+- **Rôle** : connecté (tout rôle).
+- **Réponse `200`** : audit de sécurité du citoyen connecté (dernière connexion réussie, échecs récents, historique des 10 dernières tentatives) :
+  ```json
+  {
+    "lastLoginAt": "2026-10-03T12:00:00.000Z",
+    "lastLoginIp": "192.168.1.1",
+    "recentFailures": [
+      { "id": 14, "ip": "192.168.1.1", "date": "2026-10-03T11:58:00.000Z" }
+    ],
+    "history": [
+      { "id": 15, "ip": "192.168.1.1", "success": true, "date": "2026-10-03T12:00:00.000Z" }
+    ]
+  }
+  ```
+
+### `GET /agent/security/targeted-accounts` (F37)
+- **Rôle** : `agent`, `admin`.
+- **Réponse `200`** : tableau des comptes ciblés par des tentatives échouées sur les dernières 24 heures :
+  ```json
+  [
+    {
+      "email": "victim@example.com",
+      "failedAttemptsCount": 6,
+      "lastFailedAt": "2026-10-03T12:00:00.000Z"
+    }
+  ]
+  ```
+- **`403`** pour `citizen`.
+
 
 ### `GET /me`
 - **Rôle** : connecté (tout rôle).
@@ -222,13 +264,17 @@ le traite en changeant son statut (`nouveau` → `en_cours` → `traite`).
 ### `GET /services`
 - **Rôle** : public.
 - **Réponse `200`** : tableau de tous les services municipaux, triés par
-  quartier puis par nom.
+  quartier puis par nom, incluant l'état de disponibilité en temps réel (`availability`, `availabilityMessage`, `availableAgainAt`, `alternative`).
   ```json
   [
     {
       "id": 1, "slug": "mairie-de-nova-terra", "name": "Mairie de Nova Terra",
       "description": "...", "details": "...", "contact": "...", "horaires": "...",
-      "district": "Centre-Ville"
+      "district": "Centre-Ville",
+      "availability": "incident",
+      "availabilityMessage": "Panne de climatisation centrale",
+      "availableAgainAt": "2026-10-04T08:00:00.000Z",
+      "alternative": "Utiliser le commissariat central pour les urgences"
     }
   ]
   ```
@@ -237,6 +283,64 @@ le traite en changeant son statut (`nouveau` → `en_cours` → `traite`).
 - **Rôle** : public.
 - **Réponse `200`** : même forme qu'un élément de `GET /services`.
 - **`404`** si le `slug` n'existe pas.
+
+### `PATCH /services/:idOrSlug/availability` (F38)
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  {
+    "availability": "incident",
+    "availabilityMessage": "Panne technique temporaire",
+    "availableAgainAt": "2026-10-04T08:00:00.000Z",
+    "alternative": "Contacter le standard téléphonique"
+  }
+  ```
+  - `availability` : une valeur parmi `disponible`, `maintenance`, `incident`.
+  - Autres champs optionnels.
+- **Réponse `200`** : le service mis à jour. **`404`** si introuvable. **`403`** pour `citizen`.
+
+---
+
+## Rendez-vous municipaux (F39, F40)
+
+### `GET /appointments/slots?service=:slugOrId`
+- **Rôle** : public / connecté.
+- **Réponse `200`** : tableau des créneaux disponibles pour le service demandé sur les prochains jours (`startsAt > now` et `isAvailable: true`), triés par date croissante.
+
+### `POST /appointments/book/:slotId`
+- **Rôle** : `citizen`.
+- **Corps** :
+  ```json
+  {
+    "reason": "Renouvellement pièce d'identité",
+    "requiredDocuments": "Photos d'identité, justificatif de domicile"
+  }
+  ```
+- **Réponse `201`** : confirmation du rendez-vous avec date, heure, lieu, agent assigné, service et documents à préparer.
+- **`409`** si le créneau vient d'être réservé par un autre utilisateur (gestion de concurrence).
+- **`404`** si le créneau n'existe pas.
+
+### `GET /appointments/mine`
+- **Rôle** : `citizen`.
+- **Réponse `200`** : tableau des rendez-vous de l'habitant connecté, plus récents d'abord, avec statut (`confirme` ou `annule`).
+
+### `PATCH /appointments/:id/cancel`
+- **Rôle** : `citizen` (propriétaire du RDV).
+- **Réponse `200`** : rendez-vous passé en statut `annule`, libérant automatiquement le créneau horaire (`isAvailable: true`).
+
+### `GET /appointments/:id/ics`
+- **Rôle** : connecté (le citoyen propriétaire du rendez-vous, ou un `agent` / `admin`).
+- **Sécurité** :
+  - **`401`** si aucun jeton JWT n'est fourni.
+  - **`404`** si le rendez-vous n'existe pas ou s'il appartient à un autre citoyen (ne révèle pas l'existence du rendez-vous d'un tiers).
+- **Consigne frontend** : cette route étant protégée par authentification Bearer, le front doit télécharger le fichier via un appel `fetch(...)` avec l'en-tête `Authorization: Bearer <token>`, puis déclencher le téléchargement du blob côté client (ne pas utiliser un simple lien `<a href="...">` direct).
+- **Réponse `200`** : fichier calendrier au format standard iCalendar (`text/calendar; charset=utf-8`), avec en-tête `Content-Disposition: attachment; filename="rendez-vous-:id.ics"`.
+
+### `GET /agent/appointments?serviceId=`
+- **Rôle** : `agent`, `admin`.
+- **Query param `serviceId`** (optionnel) : filtre par ID de service.
+- **Réponse `200`** : tableau des rendez-vous avec informations du citoyen et du créneau.
+
 
 ### `GET /announcements`
 - **Rôle** : public.
@@ -254,15 +358,13 @@ le traite en changeant son statut (`nouveau` → `en_cours` → `traite`).
 
 ### `POST /announcements`
 - **Rôle** : `agent`, `admin`.
-- **Corps** : `{ "title": "...", "body": "...", "category": "..." }`
-- **Réponse `201`** : l'annonce créée, `publishedAt` fixé automatiquement
-  à l'instant de création (non modifiable par le client).
+- **Corps** : `{ "title": "...", "body": "...", "category": "...", "isImportant": true }` (`isImportant` optionnel, défaut `false`).
+- **Réponse `201`** : l'annonce créée. Si `isImportant` est `true`, une notification est automatiquement générée pour tous les citoyens.
 - **`403`** pour `citizen`. **`400`** si validation échoue.
 
 ### `PATCH /announcements/:id`
 - **Rôle** : `agent`, `admin`.
-- **Corps** : tout ou partie de `{ "title", "body", "category" }` — les
-  champs omis restent inchangés.
+- **Corps** : tout ou partie de `{ "title", "body", "category", "isImportant" }` — les champs omis restent inchangés.
 - **Réponse `200`** : l'annonce mise à jour.
 - **`404`** si l'id n'existe pas. **`403`** pour `citizen`.
 
@@ -271,7 +373,134 @@ le traite en changeant son statut (`nouveau` → `en_cours` → `traite`).
 - **Réponse `204`** (corps vide) si la suppression réussit.
 - **`404`** si l'id n'existe pas. **`403`** pour `citizen`.
 
-## Prochains blocs
+---
 
-À compléter au fur et à mesure (Bloc 3 : API Webcup + dashboard agent ;
-Bloc 4 : services municipaux + annonces).
+## Alertes municipales (D18, F29, F30, F31)
+
+### `GET /alerts/active`
+- **Rôle** : public (avec personnalisation optionnelle si Bearer token présent).
+- **Comportement** :
+  - Visiteur non connecté : reçoit les alertes actives ayant `target: "all"`.
+  - Citoyen connecté : reçoit les alertes actives `target: "all"`, ainsi que celles ciblées sur son quartier (`target: "district"` et `targetDistrict === user.district`) et celles pour personnes vulnérables si son profil a `isVulnerable: true`.
+- **Réponse `200`** : tableau d'alertes actives, triées par `startsAt` décroissant.
+  ```json
+  [
+    {
+      "id": 1,
+      "title": "Alerte Météo",
+      "body": "Vents violents attendus.",
+      "instructions": "Restez à l'abri.",
+      "severity": "urgent",
+      "target": "all",
+      "targetDistrict": null,
+      "startsAt": "2026-10-03T12:00:00.000Z",
+      "expiresAt": "2026-10-04T12:00:00.000Z",
+      "createdAt": "2026-10-03T12:00:00.000Z",
+      "updatedAt": "2026-10-03T12:00:00.000Z"
+    }
+  ]
+  ```
+
+### `GET /alerts`
+- **Rôle** : public.
+- **Réponse `200`** : tableau de toutes les alertes (historique complet), plus récentes d'abord.
+
+### `GET /alerts/:id`
+- **Rôle** : public.
+- **Réponse `200`** : détail de l'alerte. **`404`** si introuvable.
+
+### `POST /alerts`
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  {
+    "title": "Alerte Canicule",
+    "body": "Températures élevées attendues.",
+    "instructions": "Hydratez-vous régulièrement.",
+    "severity": "important",
+    "target": "vulnerable",
+    "targetDistrict": null,
+    "startsAt": "2026-10-03T10:00:00.000Z",
+    "expiresAt": "2026-10-04T18:00:00.000Z"
+  }
+  ```
+  - `severity` : `info`, `important`, `urgent`.
+  - `target` : `all`, `district`, `vulnerable`.
+  - `targetDistrict` : requis si `target === "district"`, parmi les 5 quartiers officiels.
+- **Effet de bord** : génère automatiquement une notification ciblée pour chaque citoyen concerné.
+- **Réponse `201`** : l'alerte créée. **`403`** pour `citizen`. **`400`** si validation échoue.
+
+### `PATCH /alerts/:id/terminate`
+- **Rôle** : `agent`, `admin`.
+- **Description** : Termine immédiatement une alerte active (positionne `expiresAt` à la date et heure courantes) pour la retirer des alertes actives tout en préservant l'historique complet.
+- **Réponse `200`** : l'alerte mise à jour avec sa date de fin. **`404`** si introuvable. **`403`** pour `citizen`.
+
+### `PATCH /alerts/:id`
+- **Rôle** : `agent`, `admin`.
+- **Corps** : tout ou partie des champs de `POST /alerts`.
+- **Réponse `200`** : l'alerte mise à jour. **`404`** si introuvable. **`403`** pour `citizen`.
+
+### `DELETE /alerts/:id`
+- **Rôle** : `admin` (réservé exclusivement aux administrateurs pour préserver l'historique d'audit).
+- **Réponse `204`**. **`404`** si introuvable. **`403`** pour `citizen` et `agent`.
+
+---
+
+## Notifications (D18, F30)
+
+### `GET /notifications`
+- **Rôle** : connecté (tout rôle).
+- **Réponse `200`** : tableau des notifications reçues par l'utilisateur connecté, plus récentes d'abord.
+  ```json
+  [
+    {
+      "id": 1,
+      "type": "alert",
+      "title": "[Alerte] Alerte Météo",
+      "link": "/alerts/1",
+      "readAt": null,
+      "createdAt": "2026-10-03T12:00:00.000Z"
+    }
+  ]
+  ```
+
+### `PATCH /notifications/:id/read`
+- **Rôle** : connecté (propriétaire de la notification).
+- **Réponse `200`** : la notification avec `readAt` mis à jour.
+- **`404`** si la notification n'existe pas ou n'appartient pas à l'utilisateur connecté.
+
+---
+
+## Recommandations IA pour les alertes (F31)
+
+### `POST /agent/alerts/ai-recommendations`
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  {
+    "situation": "Tempête tropicale avec fortes rafales de vent et coupures électriques prévues",
+    "district": "Port Stellaire",
+    "targetAudience": "Personnes âgées et personnes à mobilité réduite"
+  }
+  ```
+  - `situation` : obligatoire (max 1000 caractères).
+  - `district` : optionnel.
+  - `targetAudience` : optionnel.
+- **Réponse `200`** :
+  ```json
+  {
+    "situation": "Tempête tropicale...",
+    "recommendations": [
+      "Vérifier le stock de lampes torches et piles de secours",
+      "Préparer une réserve d'eau potable pour au moins 48 heures",
+      "Signaler toute personne isolée au centre de secours municipal"
+    ],
+    "suggestedInstructions": "Restez confinés à l'intérieur, tenez-vous éloignés des fenêtres...",
+    "model": "qwen-turbo"
+  }
+  ```
+- **`503`** si le service IA n'est pas configuré (`QWEN_API_KEY` absente).
+- **`504`** si le fournisseur IA dépasse le délai limite (15 s).
+- **`502`** si le fournisseur IA renvoie une erreur ou est injoignable.
+- **`403`** pour `citizen`.
+

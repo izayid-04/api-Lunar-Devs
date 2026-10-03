@@ -57,7 +57,35 @@ Détail complet des routes dans [`docs/API.md`](./API.md).
 | ---- | ------- | -------------- |
 | **D12** (prépa) | Profil habitant (quartier, langue, vulnérabilité) | `User.district`, `preferredLanguage`, `isVulnerable`, `profileCompleted` (`src/users/entities/user.entity.ts`). `PATCH /me` pour les compléter — `district` validé contre la même liste de quartiers que `GET /services` (`src/common/districts.ts`). `profileCompleted` est calculé côté serveur, jamais réglable par le client. |
 
-Ce chantier prépare le terrain pour les alertes ciblées par quartier/vulnérabilité (D18, F29) et les recommandations IA (F31) — pas encore implémentées à ce stade.
+## Chantier 2 — Alertes et notifications (D18, F29, F30, F31)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **D18** | Alertes municipales d'urgence | Entité `Alert` (`title`, `body`, `instructions`, `severity`, `target`, `targetDistrict`, `startsAt`, `expiresAt`, `author`). CRUD complet pour `agent`/`admin` (`POST`, `PATCH`, `DELETE /alerts`, `GET /alerts`, `GET /alerts/:id`). |
+| **F29** | Ciblage des alertes actives | `GET /alerts/active` : renvoie les alertes globales aux visiteurs non connectés, et filtre automatiquement selon le profil de l'utilisateur connecté (quartier de résidence si `target === 'district'`, et condition de vulnérabilité si `target === 'vulnerable'`). |
+| **F30** | Centre de notifications pour les habitants | Entité `Notification` (`user`, `type`, `title`, `link`, `readAt`, `createdAt`). Déclenchées automatiquement lors de la création d'une alerte (vers les citoyens concernés) ou d'une annonce importante (`isImportant === true`). Consultation via `GET /notifications` et acquittement via `PATCH /notifications/:id/read`. |
+| **F31** | Recommandations IA pour les personnes vulnérables | `POST /agent/alerts/ai-recommendations` (`src/alerts/alerts-ai.service.ts`), réservé `agent`/`admin`. Intégration de Qwen (API compatible OpenAI) avec prompt de gestion de crise, timeout 15 s, repli d'erreur sans fuite de secrets. |
+
+## Chantier 3 — Sécurité des connexions (F37)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F37** | Sécurité des connexions et audit des accès | Rate limiting avec `@nestjs/throttler` sur `/auth/login` et `/auth/register` (avec prise en charge `trust proxy`). Verrouillage automatique de 15 min après 5 échecs de connexion (calculé à partir des `LoginAttempt` sans révéler si le compte existe, réponse standard `429 Too Many Requests`). Entité `LoginAttempt` (email, ip, success, createdAt). `GET /me/security` pour le citoyen (dernière connexion, tentatives échouées récentes, historique). `GET /agent/security/targeted-accounts` pour agents/admin (liste des comptes ciblés par des échecs sur 24h). |
+
+## Chantier 4 — Disponibilité des services (F38)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F38** | Disponibilité et état des services municipaux | Nouveaux champs sur `MunicipalService` (`availability`, `availabilityMessage`, `availableAgainAt`, `alternative`). Modifiable par agent/admin via `PATCH /services/:idOrSlug/availability` et automatiquement renvoyé par `GET /services` et `GET /services/:slug`. |
+
+## Chantier 5 — Rendez-vous municipaux (F39, F40)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F39** | Prise et gestion de rendez-vous | Entités `AppointmentSlot` (créneaux avec agent, service, dates, lieu, disponibilité, versioning optimiste) et `Appointment` (citoyen, créneau, motif, documents requis, statut `confirme`/`annule`). Consultation des créneaux `GET /appointments/slots?service=`, réservation concurrente sécurisée `POST /appointments/book/:slotId`, liste personnelle `GET /appointments/mine`, annulation `PATCH /appointments/:id/cancel` qui libère le créneau, vue agent `GET /agent/appointments`. Seed automatique de créneaux sur les 7 prochains jours. |
+| **F40** | Rappels de rendez-vous et export ICS | Génération automatique d'un rappel dans les notifications (`appointment_reminder`) lorsque le RDV a lieu dans moins de 24h, déclenché à la consultation (`GET /notifications`). Export calendrier standard iCalendar via `GET /appointments/:id/ics` pour ajout direct dans un agenda. |
+
+Détail complet des routes dans [`docs/API.md`](./API.md).
 
 ## Prochains blocs
 

@@ -80,7 +80,10 @@ export async function seedDemoUsers(dataSource: DataSource): Promise<void> {
   }
 }
 
-const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
+const MUNICIPAL_SERVICES: (Omit<
+  MunicipalService,
+  'id' | 'availability' | 'availabilityMessage' | 'availableAgainAt' | 'alternative'
+> & Partial<MunicipalService>)[] = [
   {
     slug: 'mairie-de-nova-terra',
     name: 'Mairie de Nova Terra',
@@ -188,11 +191,12 @@ export async function seedMunicipalServices(
   );
 }
 
-const ANNOUNCEMENTS: { title: string; body: string; category: string }[] = [
+const ANNOUNCEMENTS: { title: string; body: string; category: string; isImportant?: boolean }[] = [
   {
     title: 'Bienvenue sur la plateforme numérique de Nova Terra',
     body: 'La ville de Nova Terra lance sa nouvelle plateforme numérique : signalez un problème, suivez vos démarches et restez informés de l\'actualité municipale, tout en un seul endroit.',
     category: 'annonce',
+    isImportant: true,
   },
   {
     title: 'Travaux de voirie dans le quartier des Hauts de Nova',
@@ -253,3 +257,175 @@ export async function seedAnnouncements(dataSource: DataSource): Promise<void> {
       : 'Announcements already seeded, skipping.',
   );
 }
+
+// Demo citizen account for the jury, so the platform is ready to evaluate immediately
+export async function seedDemoCitizen(dataSource: DataSource): Promise<void> {
+  const repository = dataSource.getRepository(User);
+  const email = process.env.DEMO_CITIZEN_EMAIL ?? 'citoyen.demo@novaterra.local';
+  const password = process.env.DEMO_CITIZEN_PASSWORD ?? 'CitizenDemo123!';
+
+  const existing = await repository.findOne({ where: { email } });
+  if (existing) {
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+  await repository.save(
+    repository.create({
+      email,
+      passwordHash,
+      firstName: 'Amina',
+      lastName: 'Hassan',
+      role: UserRole.CITIZEN,
+      district: DISTRICTS[1], // Port Stellaire (littoral / sud)
+      preferredLanguage: 'fr',
+      isVulnerable: true,
+      profileCompleted: true,
+    }),
+  );
+  console.log(`Demo citizen account created (${email}).`);
+}
+
+// Seed alerts matching competition prompts (D18, F29, F30, F31)
+export async function seedAlerts(dataSource: DataSource): Promise<void> {
+  const { Alert } = await import('../alerts/entities/alert.entity.js');
+  const { AlertSeverity, AlertTarget } = await import('../alerts/alert-enums.js');
+  const alertRepository = dataSource.getRepository(Alert);
+  const userRepository = dataSource.getRepository(User);
+
+  const admin = await userRepository.findOne({
+    where: { role: UserRole.ADMIN },
+  });
+
+  const DEMO_ALERTS = [
+    {
+      title: 'Alerte Générale du Haut Conseil',
+      body: 'Le Haut Conseil de Nova Terra décrète une alerte générale préventive pour l\'ensemble des districts. Veuillez consulter régulièrement les canaux d\'information municipaux et suivre les consignes civiques.',
+      instructions: 'Respectez les consignes de circulation, limitez les déplacements non essentiels et tenez-vous informés via le portail officiel.',
+      severity: AlertSeverity.INFO,
+      target: AlertTarget.ALL,
+      targetDistrict: null,
+      startsAt: new Date(Date.now() - 3600 * 1000 * 4), // 4h ago
+      expiresAt: null,
+    },
+    {
+      title: "Montée du niveau de l'eau — Secteur Portuaire Sud",
+      body: 'En raison de coefficients de marée exceptionnels et de fortes houles, une montée du niveau de l\'eau est constatée sur les quais et berges du secteur Port Stellaire (façade sud). Risque de submersion des voies basses.',
+      instructions: 'Évitez les zones côtières, les quais et les promenades maritimes. Ne stationnez aucun véhicule à proximité immédiate du littoral. En cas d\'urgence côtière, contactez les secours portuaires.',
+      severity: AlertSeverity.URGENT,
+      target: AlertTarget.DISTRICT,
+      targetDistrict: DISTRICTS[1], // Port Stellaire
+      startsAt: new Date(Date.now() - 3600 * 1000 * 2), // 2h ago
+      expiresAt: null,
+    },
+    {
+      title: 'Vague de chaleur extrême — Dispositif Vigilance Vulnérabilité',
+      body: 'Un pic de température critique traverse Nova Terra avec un indice UV élevé. Les infrastructures de climatisation municipale sont activées à pleine capacité.',
+      instructions: 'Recommandations pour les personnes vulnérables : restez dans les pièces fraîches ou les espaces de fraîcheur municipaux, buvez au moins 1,5L d\'eau par jour même sans soif, mouillez-vous le corps plusieurs fois par jour, ne sortez pas aux heures les plus chaudes (11h-17h). Prévenez un voisin ou le service municipal d\'aide si vous vivez seul.',
+      severity: AlertSeverity.IMPORTANT,
+      target: AlertTarget.VULNERABLE,
+      targetDistrict: null,
+      startsAt: new Date(Date.now() - 3600 * 1000), // 1h ago
+      expiresAt: null,
+    },
+  ];
+
+  let created = 0;
+  for (const item of DEMO_ALERTS) {
+    const existing = await alertRepository.findOne({
+      where: { title: item.title },
+    });
+    if (existing) {
+      continue;
+    }
+    await alertRepository.save(
+      alertRepository.create({
+        ...item,
+        author: admin,
+      }),
+    );
+    created++;
+  }
+
+  console.log(
+    created > 0
+      ? `Seeded ${created} demo alert(s).`
+      : 'Demo alerts already seeded, skipping.',
+  );
+}
+
+// Seed appointment slots over the next 7 days for municipal services
+export async function seedAppointmentSlots(dataSource: DataSource): Promise<void> {
+  const { AppointmentSlot } = await import(
+    '../appointments/entities/appointment-slot.entity.js'
+  );
+  const slotRepo = dataSource.getRepository(AppointmentSlot);
+  const serviceRepo = dataSource.getRepository(MunicipalService);
+  const userRepo = dataSource.getRepository(User);
+
+  const [services, agent] = await Promise.all([
+    serviceRepo.find(),
+    userRepo.findOne({ where: { role: UserRole.AGENT } }),
+  ]);
+
+  if (services.length === 0) {
+    return;
+  }
+
+  const existingSlotsCount = await slotRepo.count();
+  if (existingSlotsCount > 0) {
+    console.log('Appointment slots already seeded, skipping.');
+    return;
+  }
+
+  const now = new Date();
+  let created = 0;
+
+  // For the first 3 services (Mairie, Commissariat, Hôpital), create slots over the next 7 days
+  const targetServices = services.slice(0, 3);
+
+  for (const srv of targetServices) {
+    for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+      // 2 slots per day: 10:00 - 10:30 and 14:00 - 14:30
+      const morningStart = new Date(now);
+      morningStart.setDate(now.getDate() + dayOffset);
+      morningStart.setHours(10, 0, 0, 0);
+
+      const morningEnd = new Date(morningStart);
+      morningEnd.setMinutes(30);
+
+      const afternoonStart = new Date(now);
+      afternoonStart.setDate(now.getDate() + dayOffset);
+      afternoonStart.setHours(14, 0, 0, 0);
+
+      const afternoonEnd = new Date(afternoonStart);
+      afternoonEnd.setMinutes(30);
+
+      const slotsToCreate = [
+        slotRepo.create({
+          service: srv,
+          agent: agent ?? null,
+          startsAt: morningStart,
+          endsAt: morningEnd,
+          location: `Guichet ${srv.name} — Salle 101`,
+          isAvailable: true,
+        }),
+        slotRepo.create({
+          service: srv,
+          agent: agent ?? null,
+          startsAt: afternoonStart,
+          endsAt: afternoonEnd,
+          location: `Guichet ${srv.name} — Salle 102`,
+          isAvailable: true,
+        }),
+      ];
+
+      await slotRepo.save(slotsToCreate);
+      created += slotsToCreate.length;
+    }
+  }
+
+  console.log(`Seeded ${created} appointment slot(s) for the next 7 days.`);
+}
+
+

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateAnnouncementDto {
   @IsString()
@@ -15,4 +15,8 @@ export class CreateAnnouncementDto {
   @IsNotEmpty()
   @MaxLength(100)
   category!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isImportant?: boolean;
 }

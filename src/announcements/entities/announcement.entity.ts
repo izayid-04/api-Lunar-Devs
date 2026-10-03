@@ -21,6 +21,9 @@ export class Announcement {
   @Column()
   category!: string;
 
+  @Column({ name: 'is_important', default: false })
+  isImportant!: boolean;
+
   @Column({ name: 'published_at', type: 'datetime' })
   publishedAt!: Date;
 

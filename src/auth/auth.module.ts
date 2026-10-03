@@ -1,11 +1,14 @@
 import { Global, Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from '../users/users.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { MeController } from './me.controller.js';
 import { RolesGuard } from './roles.guard.js';
+import { LoginAttempt } from './entities/login-attempt.entity.js';
+import { LoginAttemptsService } from './login-attempts.service.js';
 
 if (!process.env.JWT_SECRET) {
   console.warn(
@@ -20,6 +23,7 @@ if (!process.env.JWT_SECRET) {
 @Global()
 @Module({
   imports: [
+    TypeOrmModule.forFeature([LoginAttempt]),
     UsersModule,
     JwtModule.register({
       global: true,
@@ -28,7 +32,7 @@ if (!process.env.JWT_SECRET) {
     }),
   ],
   controllers: [AuthController, MeController],
-  providers: [AuthService, JwtAuthGuard, RolesGuard],
-  exports: [JwtAuthGuard, RolesGuard],
+  providers: [AuthService, LoginAttemptsService, JwtAuthGuard, RolesGuard],
+  exports: [JwtAuthGuard, RolesGuard, LoginAttemptsService],
 })
 export class AuthModule {}

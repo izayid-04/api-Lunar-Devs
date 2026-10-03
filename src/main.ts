@@ -8,13 +8,23 @@ import { ValidationPipe } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AppModule } from './app.module.js';
 import {
+  seedAlerts,
   seedAnnouncements,
+  seedAppointmentSlots,
+  seedDemoCitizen,
   seedDemoUsers,
   seedMunicipalServices,
 } from './database/seed.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Trust proxy for Passenger / Apache reverse proxy, to get accurate client IP in req.ip
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (expressApp && typeof expressApp.set === 'function') {
+    expressApp.set('trust proxy', 1);
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -79,8 +89,11 @@ async function bootstrap() {
       // Order matters: demo users first, so seedAnnouncements has an
       // admin account to attribute seeded announcements to.
       await seedDemoUsers(dataSource);
+      await seedDemoCitizen(dataSource);
       await seedMunicipalServices(dataSource);
       await seedAnnouncements(dataSource);
+      await seedAlerts(dataSource);
+      await seedAppointmentSlots(dataSource);
     } catch (seedErr) {
       console.error(
         'Seeding failed:',

@@ -8,6 +8,7 @@ import { User } from '../users/entities/user.entity.js';
 import type { CreateAnnouncementDto } from './dto/create-announcement.dto.js';
 import type { UpdateAnnouncementDto } from './dto/update-announcement.dto.js';
 import { Announcement } from './entities/announcement.entity.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 // Author is tracked for internal accountability only — never exposed
 // through the public API (announcements are public content; the
@@ -16,7 +17,10 @@ type PublicAnnouncement = Omit<Announcement, 'author'>;
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   private get repository() {
     if (!this.dataSource.isInitialized) {
@@ -48,10 +52,16 @@ export class AnnouncementsService {
       title: dto.title,
       body: dto.body,
       category: dto.category,
+      isImportant: dto.isImportant ?? false,
       publishedAt: new Date(),
       author: { id: authorId } as User,
     });
     const saved = await this.repository.save(announcement);
+
+    if (saved.isImportant) {
+      void this.notificationsService.notifyForImportantAnnouncement(saved);
+    }
+
     return this.toPublic(saved);
   }
 
@@ -70,6 +80,7 @@ export class AnnouncementsService {
     if (dto.title !== undefined) announcement.title = dto.title;
     if (dto.body !== undefined) announcement.body = dto.body;
     if (dto.category !== undefined) announcement.category = dto.category;
+    if (dto.isImportant !== undefined) announcement.isImportant = dto.isImportant;
     const saved = await this.repository.save(announcement);
     return this.toPublic(saved);
   }

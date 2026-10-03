@@ -37,6 +37,12 @@ export class User {
   @Column({ name: 'profile_completed', default: false })
   profileCompleted!: boolean;
 
+  @Column({ name: 'failed_login_attempts', default: 0 })
+  failedLoginAttempts!: number;
+
+  @Column({ name: 'locked_until', type: 'datetime', nullable: true })
+  lockedUntil!: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

@@ -10,7 +10,10 @@ import { UserRole } from './user-role.enum.js';
 // `id` is serialized as a string on the wire (consumers, e.g. the
 // frontend, expect a string id) even though it's a numeric auto-increment
 // column in MySQL.
-export type SafeUser = Omit<User, 'passwordHash' | 'id'> & { id: string };
+export type SafeUser = Omit<
+  User,
+  'passwordHash' | 'id' | 'failedLoginAttempts' | 'lockedUntil'
+> & { id: string };
 
 export interface CreateUserInput {
   email: string;
@@ -93,7 +96,27 @@ export class UsersService {
   }
 
   toSafe(user: User): SafeUser {
-    const { passwordHash: _passwordHash, id, ...safe } = user;
+    const { passwordHash: _passwordHash, id, failedLoginAttempts: _fla, lockedUntil: _lu, ...safe } = user;
     return { ...safe, id: String(id) };
+  }
+
+  async recordFailedLogin(user: User): Promise<{ isLocked: boolean; lockedUntil: Date | null }> {
+    user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+    if (user.failedLoginAttempts >= 5) {
+      user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min lock
+      user.failedLoginAttempts = 0; // reset counter after locking
+      await this.repository.save(user);
+      return { isLocked: true, lockedUntil: user.lockedUntil };
+    }
+    await this.repository.save(user);
+    return { isLocked: false, lockedUntil: null };
+  }
+
+  async resetFailedAttempts(user: User): Promise<void> {
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      user.failedLoginAttempts = 0;
+      user.lockedUntil = null;
+      await this.repository.save(user);
+    }
   }
 }
