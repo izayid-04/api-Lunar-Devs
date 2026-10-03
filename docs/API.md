@@ -132,6 +132,64 @@ validation (`400`, une par champ invalide).
 - **Réponse `200`** : le profil mis à jour (même forme que `GET /me`).
   `profileCompleted` passe automatiquement à `true` dès que `district` **et** `preferredLanguage` sont tous les deux renseignés — ce champ n'est jamais réglable directement par le client.
 
+### `DELETE /me` (F33)
+- **Rôle** : connecté (tout rôle).
+- **Corps** :
+  ```json
+  { "password": "MotDePasseActuel123!" }
+  ```
+  - `password` : obligatoire, mot de passe actuel de l'utilisateur pour confirmer la suppression définitive.
+- **Réponse `200`** :
+  ```json
+  { "success": true, "message": "Compte supprimé avec succès." }
+  ```
+  - Les données liées (messages, signalements, notifications) sont supprimées en cascade et les créneaux de rendez-vous réservés par l'utilisateur sont immédiatement libérés.
+- **`401`** si mot de passe incorrect ou jeton manquant/expiré.
+
+### `GET /agent/citizens` (F34)
+- **Rôle** : `agent`, `admin`.
+- **Query params** :
+  - `q` (optionnel) : recherche par nom, prénom ou email.
+  - `page` (optionnel, défaut 1) : numéro de page.
+  - `limit` (optionnel, défaut 20, max 100) : éléments par page.
+- **Réponse `200`** :
+  ```json
+  {
+    "data": [
+      {
+        "id": "12",
+        "email": "citoyen@example.com",
+        "firstName": "Fatima",
+        "lastName": "Ali",
+        "role": "citizen",
+        "isActive": true,
+        "district": "Port Stellaire",
+        "preferredLanguage": "fr",
+        "isVulnerable": false,
+        "profileCompleted": true,
+        "createdAt": "..."
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1
+  }
+  ```
+- **`403`** pour `citizen`.
+
+### `PATCH /agent/citizens/:id/status` (F34)
+- **Rôle** : `agent`, `admin`.
+- **Corps** :
+  ```json
+  { "isActive": false }
+  ```
+- **Réponse `200`** : profil citoyen mis à jour avec son nouveau statut d'activation.
+- **Règles de sécurité strictes** :
+  - Un compte désactivé (`isActive: false`) ne peut plus s'authentifier via `/auth/login` (réponse `401 Unauthorized` générique sans révéler la désactivation).
+  - Un agent ou administrateur ne peut **jamais** modifier un compte agent ou admin via cette route (**`403 Forbidden`**).
+- **`404`** si l'utilisateur n'existe pas.
+
 ### `GET /agent/ping`
 - **Rôle** : `agent`, `admin`.
 - **Réponse `200`** : `{ "status": "ok", "scope": "agent" }`

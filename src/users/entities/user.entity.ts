@@ -21,6 +21,10 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CITIZEN })
   role!: UserRole;
 
+  // F34 — Désactivation administrative du compte
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive!: boolean;
+
   // Profile fields (D12, F29, F31 prep) — all optional until the user
   // completes their profile via PATCH /me.
   @Column({ type: 'varchar', nullable: true })

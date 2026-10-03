@@ -72,7 +72,7 @@ export class AuthService {
     const passwordValid =
       user && (await bcrypt.compare(dto.password, user.passwordHash));
 
-    if (!passwordValid) {
+    if (!passwordValid || user.isActive === false) {
       await this.loginAttemptsService.recordAttempt(normalizedEmail, ip, false);
 
       // Check if this latest attempt just triggered the 5-attempt lockout
@@ -94,7 +94,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // 3. Success (user is guaranteed non-null here)
+    // 3. Success (user is guaranteed non-null and active here)
     await this.loginAttemptsService.recordAttempt(normalizedEmail, ip, true);
 
     const accessToken = await this.jwtService.signAsync({

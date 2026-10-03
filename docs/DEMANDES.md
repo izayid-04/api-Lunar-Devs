@@ -13,6 +13,8 @@ pour que ce soit vérifiable rapidement (par l'équipe, par le jury).
 | **D03** | Connexion | `POST /auth/login` (même fichiers). Vérifie le mot de passe avec `bcryptjs` (`bcrypt.compare`), renvoie un JWT (`{ accessToken }`) signé avec `JWT_SECRET`, valide 1 jour. Identifiants invalides → `401` générique (pas d'indice sur l'existence du compte). |
 | **D08** | Espace personnel | `GET /me` (`src/auth/me.controller.ts`), protégé par `JwtAuthGuard`. Renvoie le profil de l'utilisateur authentifié par son token (`id`, `email`, `firstName`, `lastName`, `role`, `createdAt`) — jamais `passwordHash`. |
 | **D09** | 3 rôles + contrôle d'accès | Enum `UserRole` (`citizen`, `agent`, `admin`, `src/users/user-role.enum.ts`), colonne `role` sur `User`. Contrôle d'accès par `JwtAuthGuard` (authentification) + `@Roles(...)` / `RolesGuard` (autorisation, `src/auth/`). Démontré par `GET /agent/ping` (`agent`, `admin`) et `GET /admin/ping` (`admin` seul) dans `src/role-demo.controller.ts` — un `citizen` reçoit `403` sur les deux. |
+| **F33** | Suppression de compte citoyen | `DELETE /me` (`src/auth/me.controller.ts`), confirmation obligatoire par mot de passe (`401` si incorrect). Suppression en cascade propre des données liées et libération automatique des créneaux de rendez-vous réservés. |
+| **F34** | Administration des comptes citoyens par les agents | `GET /agent/citizens` (recherche `?q=`, pagination `?page=` et `?limit=`), `PATCH /agent/citizens/:id/status` pour activer/désactiver un compte. Un compte désactivé est bloqué à la connexion (`401`). Un agent ne peut en aucun cas modifier un agent ou admin (`403`). |
 
 Détail technique (modèle de données, variables d'environnement,
 comptes de démonstration pour le jury, procédure de test) dans
