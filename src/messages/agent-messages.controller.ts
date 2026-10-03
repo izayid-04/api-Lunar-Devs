@@ -25,7 +25,11 @@ export class AgentMessagesController {
 
   @Get()
   findAll(@Query() query: ListMessagesQueryDto) {
-    return this.messagesService.findForAgents(query.status, query.type);
+    return this.messagesService.findForAgents(
+      query.status,
+      query.type,
+      query.sort,
+    );
   }
 
   @Patch(':id/status')

@@ -93,8 +93,14 @@ d'erreur) dans [`docs/API.md`](./API.md).
 
 Détail complet des routes dans [`docs/API.md`](./API.md).
 
-## Prochains blocs
+## Chantier 6 — Gestion citoyenne & Traitement des demandes (F33, F34, F49, F50, F52)
 
-À compléter au fur et à mesure que les blocs suivants du sujet Nova
-Terra sont traités — un tableau par bloc, même format (code → demande →
-endpoint(s)/fichier(s) qui la satisfont).
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **F33** | Suppression de compte citoyen | `DELETE /me` avec confirmation du mot de passe (`password`). Nettoie ou anonymise les données liées en cascade et supprime le compte définitivement. |
+| **F34** | Annuaire et gestion des comptes par les agents | `GET /agent/citizens` (liste paginée avec recherche par nom/email/quartier), `PATCH /agent/citizens/:id/status` (activation / désactivation de compte citoyen, blocage immédiat à la connexion, interdiction de modifier les comptes staff). Migration `1791100000000-AddUserIsActive.ts`. |
+| **F49** | Notification au citoyen lors du changement de statut | Déclenchement automatique d'une `Notification` (`type: 'demande_statut'`) pour le citoyen dès qu'un agent change le statut de son message via `PATCH /agent/messages/:id/status`, avec lien direct `/demandes/:id` et message récapitulatif. |
+| **F50** | Métriques et statistiques d'activité dans le dashboard | `GET /agent/dashboard` enrichi avec répartition des signalements par catégorie et par quartier, nombre total de soutiens citoyens cumulés, alertes actives et prochains rendez-vous municipaux. |
+| **F52** | Soutien citoyen aux signalements publics | Entité `MessageSupport`, endpoint `POST /messages/:id/support` (vote/soutien citoyen avec compteur unitaire `supportCount`), et tri par popularité `GET /agent/messages?sort=supports` pour prioriser les interventions de terrain. Migration `1791110000000-AddMessageSupportsAndNotificationType.ts`. |
+
+Détail complet des routes dans [`docs/API.md`](./API.md).

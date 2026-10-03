@@ -42,4 +42,13 @@ export class MessagesController {
   ) {
     return this.messagesService.findMineOne(user.sub, id);
   }
+
+  // F52 : Soutenir une demande déjà déposée
+  @Post(':id/support')
+  toggleSupport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.messagesService.toggleSupport(id, user.sub);
+  }
 }

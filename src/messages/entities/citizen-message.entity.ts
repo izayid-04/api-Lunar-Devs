@@ -12,6 +12,7 @@ import { User } from '../../users/entities/user.entity.js';
 import { MessageStatus } from '../message-status.enum.js';
 import { MessageType } from '../message-type.enum.js';
 import { MessageStatusHistory } from './message-status-history.entity.js';
+import { MessageSupport } from './message-support.entity.js';
 
 @Entity({ name: 'citizen_messages' })
 export class CitizenMessage {
@@ -56,8 +57,15 @@ export class CitizenMessage {
   @Column({ type: 'enum', enum: MessageStatus, default: MessageStatus.NOUVEAU })
   status!: MessageStatus;
 
+  // F52 : Nombre de soutiens reçus
+  @Column({ name: 'support_count', type: 'int', default: 0 })
+  supportCount!: number;
+
   @OneToMany(() => MessageStatusHistory, (history) => history.message)
   history!: MessageStatusHistory[];
+
+  @OneToMany(() => MessageSupport, (support) => support.message)
+  supports!: MessageSupport[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;

@@ -292,11 +292,24 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
 - **Réponse `200`** : détail du message avec chronologie complète.
 - **`404`** si le message n'existe pas ou n'appartient pas au citoyen connecté (ne fuite aucune information). **`401`** sans token, **`403`** pour `agent`/`admin`.
 
-### `GET /agent/messages?status=&type=`
+### `POST /messages/:id/support` (F52)
+- **Rôle** : `citizen`.
+- **Description** : Permet à un habitant d'apporter son soutien (ou retirer son soutien en cliquant à nouveau, système toggle) à un signalement d'incident ou une question déposée.
+- **Réponse `200`** / **`201`** :
+  ```json
+  {
+    "supported": true,
+    "supportCount": 4
+  }
+  ```
+- **`404`** si message non trouvé. **`401`** sans token.
+
+### `GET /agent/messages?status=&type=&sort=`
 - **Rôle** : `agent`, `admin`.
 - **Query params** :
   - `status` (optionnel) : `nouveau`, `en_cours`, `traite`.
   - `type` (optionnel) : `question`, `signalement`.
+  - `sort` (optionnel) : `recent` (défaut) ou `supports` (trie les signalements par nombre décroissant de soutiens citoyens — F52).
 - **Réponse `200`** :
   ```json
   {
@@ -311,6 +324,7 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
         "district": "Port Stellaire",
         "preciseLocation": "...",
         "status": "en_cours",
+        "supportCount": 12,
         "createdAt": "...",
         "updatedAt": "...",
         "author": { "id": "3", "firstName": "Mo", "lastName": "Said", "email": "mo@example.com" },
@@ -320,9 +334,8 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
     "counts": { "nouveau": 1, "en_cours": 1, "traite": 0 }
   }
   ```
-  - `counts` s'adapte au filtre `type` s'il est spécifié.
 
-### `PATCH /agent/messages/:id/status`
+### `PATCH /agent/messages/:id/status` (D11, F49)
 - **Rôle** : `agent`, `admin`.
 - **Corps** :
   ```json
@@ -334,11 +347,12 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
   - `status` : obligatoire (`nouveau`, `en_cours`, `traite`).
   - `note` : facultatif (max 1000 caractères), ajoutée à l'étape d'historique.
 - **Réponse `200`** : le message mis à jour avec son historique actualisé.
+- **Notification automatique (F49)** : une `Notification` de type `demande_statut` est automatiquement générée pour l'auteur du message l'informant du changement d'état (ex: *« Votre demande NT-0001 est passée à l'état : en cours »*).
 - **`404`** si message inexistant. **`400`** si `status` invalide.
 
 ---
 
-## Espace agents + API Webcup (Bloc 3 — D19)
+## Espace agents + API Webcup (Bloc 3 — D19, F50)
 
 ### `GET /agent/webcup/requests`
 - **Rôle** : `agent`, `admin`.
@@ -368,9 +382,9 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
 - Si l'API Webcup échoue mais qu'un cache (même périmé) existe, il est
   renvoyé à la place d'une erreur — pas de `503` dans ce cas.
 
-### `GET /agent/dashboard`
+### `GET /agent/dashboard` (D19, F50)
 - **Rôle** : `agent`, `admin`.
-- **Réponse `200`** :
+- **Réponse `200`** : tableau de bord enrichi de suivi d'activité municipale :
   ```json
   {
     "citizensCount": 42,
@@ -381,13 +395,17 @@ Un habitant envoie une question ou un signalement d'incident à un service de la
         "status": "nouveau", "createdAt": "...", "updatedAt": "...",
         "author": { "id": "5", "firstName": "...", "lastName": "...", "email": "..." }
       }
-    ]
+    ],
+    "metrics": {
+      "byCategory": { "voirie": 5, "eclairage": 3, "eau": 2 },
+      "byDistrict": { "Centre-Ville": 6, "Port Stellaire": 4 },
+      "totalSupports": 24,
+      "upcomingAppointmentsCount": 8,
+      "activeAlertsCount": 2
+    }
   }
   ```
-  - `citizensCount` : nombre total de comptes `citizen`.
-  - `messagesByStatus` : identique aux `counts` de `GET /agent/messages`.
-  - `recentMessages` : les 5 messages les plus récents, tous statuts
-    confondus, avec l'auteur.
+  - `metrics` (F50) : répartition des signalements par catégorie et quartier, volume total de soutiens citoyens, rendez-vous à venir et alertes actives.
 
 ## Contenu de la ville (Bloc 4 — D05, D06, F28, F32, F38, F45, F46)
 

@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -7,6 +9,9 @@ import { DataSource } from 'typeorm';
 import { User } from '../users/entities/user.entity.js';
 import { CitizenMessage } from './entities/citizen-message.entity.js';
 import { MessageStatusHistory } from './entities/message-status-history.entity.js';
+import { MessageSupport } from './entities/message-support.entity.js';
+import { Notification } from '../notifications/entities/notification.entity.js';
+import { NotificationType } from '../notifications/notification-type.enum.js';
 import type { CreateMessageDto } from './dto/create-message.dto.js';
 import type { UpdateMessageStatusDto } from './dto/update-message-status.dto.js';
 import { MessageStatus } from './message-status.enum.js';
@@ -32,10 +37,12 @@ export type PublicMessage = Pick<
   | 'district'
   | 'preciseLocation'
   | 'status'
+  | 'supportCount'
   | 'createdAt'
   | 'updatedAt'
 > & {
   history?: PublicStatusHistory[];
+  hasSupported?: boolean;
 };
 
 export type PublicMessageWithAuthor = PublicMessage & {
@@ -62,6 +69,13 @@ export class MessagesService {
     return this.dataSource.getRepository(MessageStatusHistory);
   }
 
+  private get supportRepository() {
+    if (!this.dataSource.isInitialized) {
+      throw new ServiceUnavailableException('Database unavailable');
+    }
+    return this.dataSource.getRepository(MessageSupport);
+  }
+
   async create(authorId: number, dto: CreateMessageDto): Promise<PublicMessage> {
     const isSignalement = dto.type === MessageType.SIGNALEMENT;
 
@@ -78,6 +92,7 @@ export class MessagesService {
         district: dto.district ?? null,
         preciseLocation: dto.preciseLocation ?? null,
         status: MessageStatus.NOUVEAU,
+        supportCount: 0,
       });
 
       const saved = await messageRepo.save(message);
@@ -128,20 +143,78 @@ export class MessagesService {
     return this.toPublic(message);
   }
 
+  // F52 : Soutenir un signalement/message existant (toggle ou vote)
+  async toggleSupport(
+    messageId: number,
+    userId: number,
+  ): Promise<{ supported: boolean; supportCount: number }> {
+    return await this.dataSource.transaction(async (manager) => {
+      const messageRepo = manager.getRepository(CitizenMessage);
+      const supportRepo = manager.getRepository(MessageSupport);
+
+      const message = await messageRepo.findOne({ where: { id: messageId } });
+      if (!message) {
+        throw new NotFoundException('Message non trouvé');
+      }
+
+      const existingSupport = await supportRepo.findOne({
+        where: { messageId, userId },
+      });
+
+      let supported = false;
+      if (existingSupport) {
+        // Déjà soutenu -> retirer le soutien
+        await supportRepo.delete(existingSupport.id);
+        message.supportCount = Math.max(0, (message.supportCount || 1) - 1);
+        supported = false;
+      } else {
+        // Pas encore soutenu -> ajouter le soutien
+        const newSupport = supportRepo.create({
+          messageId,
+          userId,
+        });
+        await supportRepo.save(newSupport);
+        message.supportCount = (message.supportCount || 0) + 1;
+        supported = true;
+      }
+
+      await messageRepo.save(message);
+
+      return { supported, supportCount: message.supportCount };
+    });
+  }
+
   async findForAgents(
     status?: MessageStatus,
     type?: MessageType,
+    sort?: 'recent' | 'supports',
   ): Promise<{ messages: PublicMessageWithAuthor[]; counts: StatusCounts }> {
-    const where: { status?: MessageStatus; type?: MessageType } = {};
-    if (status) where.status = status;
-    if (type) where.type = type;
+    const qb = this.repository
+      .createQueryBuilder('message')
+      .leftJoinAndSelect('message.author', 'author')
+      .leftJoinAndSelect('message.history', 'history')
+      .leftJoinAndSelect('history.changedBy', 'changedBy');
+
+    if (status) {
+      qb.andWhere('message.status = :status', { status });
+    }
+    if (type) {
+      qb.andWhere('message.type = :type', { type });
+    }
+
+    if (sort === 'supports') {
+      qb.orderBy('message.supportCount', 'DESC').addOrderBy(
+        'message.createdAt',
+        'DESC',
+      );
+    } else {
+      qb.orderBy('message.createdAt', 'DESC');
+    }
+
+    qb.addOrderBy('history.changedAt', 'ASC');
 
     const [messages, counts] = await Promise.all([
-      this.repository.find({
-        where,
-        order: { createdAt: 'DESC', history: { changedAt: 'ASC' } },
-        relations: { author: true, history: { changedBy: true } },
-      }),
+      qb.getMany(),
       this.countByStatus(type),
     ]);
 
@@ -151,6 +224,7 @@ export class MessagesService {
     };
   }
 
+  // F49 : Mise à jour de statut avec création automatique de notification pour l'auteur
   async updateStatus(
     id: number,
     dto: UpdateMessageStatusDto,
@@ -159,16 +233,18 @@ export class MessagesService {
     return await this.dataSource.transaction(async (manager) => {
       const messageRepo = manager.getRepository(CitizenMessage);
       const historyRepo = manager.getRepository(MessageStatusHistory);
+      const notifRepo = manager.getRepository(Notification);
 
       const message = await messageRepo.findOne({
         where: { id },
-        relations: { history: { changedBy: true } },
+        relations: { author: true, history: { changedBy: true } },
       });
 
       if (!message) {
         throw new NotFoundException('Message not found');
       }
 
+      const previousStatus = message.status;
       message.status = dto.status;
       const saved = await messageRepo.save(message);
 
@@ -182,6 +258,17 @@ export class MessagesService {
 
       if (!saved.history) saved.history = [];
       saved.history.push(historyEntry);
+
+      // F49 : Notification automatique envoyée à l'habitant
+      if (message.author && previousStatus !== dto.status) {
+        const notif = notifRepo.create({
+          user: message.author,
+          type: NotificationType.DEMANDE_STATUT,
+          title: `Votre demande ${saved.reference ?? `#${saved.id}`} est passée à l'état : ${dto.status.replace('_', ' ')}`,
+          link: `/messages/mine/${saved.id}`,
+        });
+        await notifRepo.save(notif);
+      }
 
       return this.toPublic(saved);
     });
@@ -198,6 +285,49 @@ export class MessagesService {
       relations: { author: true },
     });
     return messages.map((message) => this.toPublicWithAuthor(message));
+  }
+
+  // F50 : Métriques agrégées pour le tableau de bord
+  async getMetricsByDistrictAndCategory(): Promise<{
+    byCategory: Record<string, number>;
+    byDistrict: Record<string, number>;
+    totalSupports: number;
+  }> {
+    const [categoryRows, districtRows, supportTotal] = await Promise.all([
+      this.repository
+        .createQueryBuilder('m')
+        .select('m.category', 'category')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('m.category')
+        .getRawMany<{ category: string; count: string }>(),
+      this.repository
+        .createQueryBuilder('m')
+        .select('m.district', 'district')
+        .addSelect('COUNT(*)', 'count')
+        .where('m.district IS NOT NULL')
+        .groupBy('m.district')
+        .getRawMany<{ district: string; count: string }>(),
+      this.repository
+        .createQueryBuilder('m')
+        .select('COALESCE(SUM(m.support_count), 0)', 'total')
+        .getRawOne<{ total: string }>(),
+    ]);
+
+    const byCategory: Record<string, number> = {};
+    for (const r of categoryRows) {
+      byCategory[r.category] = Number(r.count);
+    }
+
+    const byDistrict: Record<string, number> = {};
+    for (const r of districtRows) {
+      byDistrict[r.district] = Number(r.count);
+    }
+
+    return {
+      byCategory,
+      byDistrict,
+      totalSupports: Number(supportTotal?.total || 0),
+    };
   }
 
   private async countByStatus(type?: MessageType): Promise<StatusCounts> {
@@ -237,6 +367,7 @@ export class MessagesService {
       district: message.district,
       preciseLocation: message.preciseLocation,
       status: message.status,
+      supportCount: message.supportCount || 0,
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       history: message.history
