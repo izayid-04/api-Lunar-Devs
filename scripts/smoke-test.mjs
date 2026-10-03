@@ -148,6 +148,50 @@ async function run() {
   const rSecurityMineNoAuth = await request('/me/security');
   record('GET /me/security', 'sans jeton (401)', 401, rSecurityMineNoAuth.status);
 
+  // Tests PATCH /me/password (D03 / F37)
+  const rPassNoAuth = await request('/me/password', {
+    method: 'PATCH',
+    body: { currentPassword: citizenPassword, newPassword: 'NewCitizen123!' },
+  });
+  record('PATCH /me/password', 'sans jeton (401)', 401, rPassNoAuth.status);
+
+  const rPassWrongCurrent = await request('/me/password', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { currentPassword: 'WrongPassword999!', newPassword: 'NewCitizen123!' },
+  });
+  record('PATCH /me/password', 'mot de passe actuel faux (401)', 401, rPassWrongCurrent.status);
+
+  const rPassTooWeak = await request('/me/password', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { currentPassword: citizenPassword, newPassword: 'faible' },
+  });
+  record('PATCH /me/password', 'nouveau trop faible (400)', 400, rPassTooWeak.status);
+
+  const rPassIdentical = await request('/me/password', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { currentPassword: citizenPassword, newPassword: citizenPassword },
+  });
+  record('PATCH /me/password', 'nouveau identique à l ancien (400)', 400, rPassIdentical.status);
+
+  const tempNewPassword = 'NewCitizen123!';
+  const rPassSuccess = await request('/me/password', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { currentPassword: citizenPassword, newPassword: tempNewPassword },
+  });
+  record('PATCH /me/password', 'changement réussi (200)', 200, rPassSuccess.status);
+
+  // Remise en place du mot de passe initial pour préserver l'état de démo
+  const rPassReset = await request('/me/password', {
+    method: 'PATCH',
+    headers: authH(citizenToken),
+    body: { currentPassword: tempNewPassword, newPassword: citizenPassword },
+  });
+  record('PATCH /me/password', 'remise mot de passe initial (200)', 200, rPassReset.status);
+
   const rSecTargeted = await request('/agent/security/targeted-accounts', { headers: authH(agentToken) });
   record('GET /agent/security/targeted-accounts', 'agent connecté (200)', 200, rSecTargeted.status);
 

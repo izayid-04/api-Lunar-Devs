@@ -1,6 +1,6 @@
 # API — contrat des routes
 
-> **Dernière mise à jour : 03 octobre 2026 à 20:25 UTC+3 (17:25 UTC)**  
+> **Dernière mise à jour : 03 octobre 2026 à 21:05 UTC+3 (18:05 UTC)**  
 > Conforme à 100% avec l'implémentation NestJS (`src/`).
 
 Documentation précise de chaque route de l'API `api-lunar-devs`. Sert de contrat strict entre le backend et l'agent front — toute réponse décrite ici est garantie.
@@ -22,7 +22,7 @@ Erreurs : toutes les erreurs suivent le format standard NestJS :
 ## 📋 Tableau Récapitulatif Général des Routes
 
 | Domaine | Méthode & Route | Rôle Requis | Demandes Webcup Couvertes | Description |
-| :--- | :--- | :--- | :---: | :--- |
+| :--- | :--- | :--- | :--- | :--- |
 | **Santé** | `GET /` | `public` | - | Message racine / confirmation API en ligne |
 | **Santé** | `GET /health` | `public` | - | État global du serveur (mémoire, Node, app) |
 | **Santé** | `GET /health/db` | `public` | - | Connexion base de données MySQL |
@@ -30,6 +30,7 @@ Erreurs : toutes les erreurs suivent le format standard NestJS :
 | **Auth** | `POST /auth/login` | `public` | **D03** | Connexion avec identifiants, renvoie JWT |
 | **Profil** | `GET /me` | `connecté` | **D08** | Consultation de son espace personnel |
 | **Profil** | `PATCH /me` | `connecté` | **D12** | Mise à jour quartier, langue, vulnérabilité |
+| **Profil** | `PATCH /me/password` | `connecté` | **D03, F37** | Modification de mot de passe sécurisée avec audit |
 | **Profil** | `DELETE /me` | `connecté` | **F33** | Suppression définitive du compte avec mot de passe |
 | **Sécurité** | `GET /me/security` | `connecté` | **F37** | Audit des accès personnels et échecs récents |
 | **Sécurité** | `GET /agent/security/targeted-accounts` | `agent`, `admin` | **F37** | Comptes ciblés par tentatives frauduleuses (24h) |
@@ -198,6 +199,30 @@ Erreurs : toutes les erreurs suivent le format standard NestJS :
   - `isVulnerable` : booléen.
 - **Réponse `200`** : le profil mis à jour (même forme que `GET /me`).
   `profileCompleted` passe automatiquement à `true` dès que `district` **et** `preferredLanguage` sont tous les deux renseignés — ce champ n'est jamais réglable directement par le client.
+
+### `PATCH /me/password` (D03, F37)
+- **Rôle** : connecté (tout rôle).
+- **Corps** :
+  ```json
+  {
+    "currentPassword": "AncienMotDePasse123!",
+    "newPassword": "NouveauMotDePasse123!"
+  }
+  ```
+  - `currentPassword` : chaîne non vide, mot de passe actuel du compte.
+  - `newPassword` : chaîne (8 à 72 caractères, au moins 1 lettre majuscule et au moins 1 chiffre). Doit obligatoirement différer du mot de passe actuel.
+- **Réponse `200`** :
+  ```json
+  {
+    "message": "Mot de passe modifié avec succès."
+  }
+  ```
+  - **Effets de bord de sécurité & conformité** :
+    - Envoi immédiat d'une notification à l'utilisateur : *"Votre mot de passe a été modifié. Si ce n'est pas vous, contactez la mairie."*
+    - Écriture d'une entrée dans le journal d'audit (`user_password_changed`, entité `User`, IP de la requête).
+- **Codes d'erreur** :
+  - **`400 Bad Request`** : nouveau mot de passe trop faible (moins de 8 caractères, pas de majuscule ou de chiffre) ou identique à l'ancien.
+  - **`401 Unauthorized`** : mot de passe actuel faux (la tentative échouée est comptabilisée dans les métriques de détection d'intrusions F37) ou jeton manquant/expiré.
 
 ### `DELETE /me` (F33)
 - **Rôle** : connecté (tout rôle).

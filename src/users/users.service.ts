@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -14,6 +16,9 @@ import { Appointment } from '../appointments/entities/appointment.entity.js';
 import { AppointmentSlot } from '../appointments/entities/appointment-slot.entity.js';
 import type { ListCitizensQueryDto } from './dto/list-citizens-query.dto.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import { NotificationType } from '../notifications/notification-type.enum.js';
+import { LoginAttemptsService } from '../auth/login-attempts.service.js';
 
 export type SafeUser = Omit<
   User,
@@ -41,6 +46,9 @@ export class UsersService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
+    @Inject(forwardRef(() => LoginAttemptsService))
+    private readonly loginAttemptsService: LoginAttemptsService,
   ) {}
 
   private get repository() {
@@ -166,6 +174,63 @@ export class UsersService {
     return {
       success: true,
       message: 'Compte supprimé avec succès.',
+    };
+  }
+
+  // D03 / F37 : PATCH /me/password
+  async changePassword(
+    userId: number,
+    dto: { currentPassword: string; newPassword: string },
+    ip: string,
+  ): Promise<{ message: string }> {
+    const user = await this.findWithPasswordById(userId);
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable');
+    }
+
+    // 1. Vérification du mot de passe actuel
+    const isCurrentValid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!isCurrentValid) {
+      // Compte dans les échecs de connexion (F37)
+      await this.loginAttemptsService.recordAttempt(user.email, ip, false);
+      throw new UnauthorizedException('Mot de passe actuel incorrect');
+    }
+
+    // 2. Vérification que le nouveau mot de passe est différent de l'ancien
+    const isSameAsOld = await bcrypt.compare(dto.newPassword, user.passwordHash);
+    if (isSameAsOld) {
+      throw new BadRequestException('Le nouveau mot de passe doit être différent de l’ancien mot de passe');
+    }
+
+    // 3. Mise à jour du hash
+    const saltRounds = 10;
+    const newHash = await bcrypt.hash(dto.newPassword, saltRounds);
+    user.passwordHash = newHash;
+    await this.repository.save(user);
+
+    // 4. Enregistrement d'une tentative réussie pour la sécurité
+    await this.loginAttemptsService.recordAttempt(user.email, ip, true);
+
+    // 5. Notification envoyée au citoyen
+    await this.notificationsService.create({
+      user,
+      type: NotificationType.ALERT,
+      title: 'Votre mot de passe a été modifié. Si ce n’est pas vous, contactez la mairie.',
+      link: '/me/security',
+    });
+
+    // 6. Entrée dans l'audit log
+    await this.auditService.log({
+      action: 'user_password_changed',
+      entityType: 'User',
+      entityId: String(userId),
+      details: { email: user.email },
+      author: user,
+      ipAddress: ip,
+    });
+
+    return {
+      message: 'Mot de passe modifié avec succès.',
     };
   }
 
