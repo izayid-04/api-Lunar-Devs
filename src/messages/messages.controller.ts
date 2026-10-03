@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -45,6 +47,7 @@ export class MessagesController {
 
   // F52 : Soutenir une demande déjà déposée
   @Post(':id/support')
+  @HttpCode(HttpStatus.OK)
   toggleSupport(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
