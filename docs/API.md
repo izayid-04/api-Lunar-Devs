@@ -38,6 +38,10 @@ Erreurs : toutes les erreurs suivent le format standard NestJS :
 | **Rôles** | `GET /admin/ping` | `admin` | **D09** | Vérification des privilèges administrateur |
 | **Comptes** | `GET /agent/citizens` | `agent`, `admin` | **F34** | Annuaire des citoyens avec recherche et pagination |
 | **Comptes** | `PATCH /agent/citizens/:id/status` | `agent`, `admin` | **F34** | Activation / désactivation de compte citoyen |
+| **Administration** | `GET /admin/users` | `admin` | **D08, D09** | Liste complète des utilisateurs (citoyens, agents, admin) |
+| **Administration** | `POST /admin/users` | `admin` | **D08, D09** | Création d'un compte agent ou citoyen par l'admin |
+| **Administration** | `PATCH /admin/users/:id/role` | `admin` | **D08, D09** | Modification de rôle (citoyen / agent / admin) |
+| **Administration** | `PATCH /admin/users/:id/status` | `admin` | **D08, D09** | Activation / désactivation de n'importe quel compte (sauf soi-même) |
 | **Messages** | `POST /messages` | `citizen` | **D04, F22, F25** | Dépôt d'une question ou d'un signalement |
 | **Messages** | `GET /messages/mine` | `citizen` | **F22** | Historique personnel des demandes |
 | **Messages** | `GET /messages/mine/:id` | `citizen` | **D11** | Détail d'une demande avec étapes de traitement |
@@ -291,6 +295,83 @@ Erreurs : toutes les erreurs suivent le format standard NestJS :
 - **Rôle** : `admin`.
 - **Réponse `200`** : `{ "status": "ok", "scope": "admin" }`
 - **`403`** pour `citizen` et `agent`. **`401`** sans token.
+
+### `GET /admin/users` (D08, D09)
+- **Rôle** : `admin`.
+- **Query params** :
+  - `q` (optionnel) : recherche par nom, prénom ou email.
+  - `role` (optionnel) : filtre par rôle (`citizen`, `agent`, `admin`).
+  - `page` (optionnel, défaut 1) : page demandée.
+  - `limit` (optionnel, défaut 20, max 100) : éléments par page.
+- **Réponse `200`** :
+  ```json
+  {
+    "data": [
+      {
+        "id": "1",
+        "email": "agent.demo@novaterra.local",
+        "firstName": "Sami",
+        "lastName": "Benali",
+        "role": "agent",
+        "isActive": true,
+        "district": null,
+        "preferredLanguage": null,
+        "isVulnerable": false,
+        "profileCompleted": false,
+        "createdAt": "2026-10-03T12:00:00.000Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 1
+  }
+  ```
+- **`403`** pour `citizen` et `agent`.
+
+### `POST /admin/users` (D08, D09)
+- **Rôle** : `admin`.
+- **Corps** :
+  ```json
+  {
+    "email": "nouvel.agent@novaterra.local",
+    "password": "AgentPassword123!",
+    "firstName": "Yacine",
+    "lastName": "Diallo",
+    "role": "agent",
+    "district": "Port Stellaire"
+  }
+  ```
+  - `email` : adresse email unique et valide.
+  - `password` : mot de passe fort (8 à 72 caractères, min 1 majuscule, min 1 chiffre).
+  - `firstName`, `lastName` : obligatoires.
+  - `role` : un rôle parmi `citizen`, `agent`, `admin`.
+- **Réponse `201`** : profil sécurisé de l'utilisateur créé.
+- **`400`** si email déjà existant ou validation échouée. **`403`** pour `citizen` et `agent`.
+
+### `PATCH /admin/users/:id/role` (D08, D09)
+- **Rôle** : `admin`.
+- **Corps** :
+  ```json
+  {
+    "role": "agent"
+  }
+  ```
+- **Réponse `200`** : profil de l'utilisateur avec son nouveau rôle.
+- **Règle de sécurité** : un administrateur ne peut pas se retirer à lui-même le rôle `admin` (**`400 Bad Request`**).
+- **`404`** si l'utilisateur n'existe pas. **`403`** pour `citizen` et `agent`.
+
+### `PATCH /admin/users/:id/status` (D08, D09)
+- **Rôle** : `admin`.
+- **Corps** :
+  ```json
+  {
+    "isActive": false
+  }
+  ```
+- **Réponse `200`** : profil de l'utilisateur avec son statut d'activation mis à jour.
+- **Règle de sécurité** : un administrateur ne peut pas désactiver son propre compte (**`400 Bad Request`**).
+- **`404`** si l'utilisateur n'existe pas. **`403`** pour `citizen` et `agent`.
 
 ---
 

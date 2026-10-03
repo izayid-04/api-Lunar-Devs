@@ -301,6 +301,167 @@ export class UsersService {
     return this.toSafe(saved);
   }
 
+  // D08 / D09 : GET /admin/users avec filtrage par rôle, recherche et pagination
+  async adminFindUsers(query: {
+    q?: string;
+    role?: UserRole;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedCitizens> {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const qb = this.repository.createQueryBuilder('user');
+
+    if (query.role) {
+      qb.andWhere('user.role = :role', { role: query.role });
+    }
+
+    if (query.q && query.q.trim()) {
+      const search = `%${query.q.trim()}%`;
+      qb.andWhere(
+        '(user.first_name LIKE :search OR user.last_name LIKE :search OR user.email LIKE :search)',
+        { search },
+      );
+    }
+
+    qb.orderBy('user.created_at', 'DESC').skip(skip).take(limit);
+
+    const [users, total] = await qb.getManyAndCount();
+
+    return {
+      data: users.map((u) => this.toSafe(u)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  // D08 / D09 : POST /admin/users - création d'un compte agent ou citoyen par l'admin
+  async adminCreateUser(
+    dto: {
+      email: string;
+      password: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      district?: string;
+    },
+    actingUserId: number,
+  ): Promise<SafeUser> {
+    const existing = await this.findByEmail(dto.email.trim().toLowerCase());
+    if (existing) {
+      throw new BadRequestException('Un utilisateur existe déjà avec cet email.');
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(dto.password, saltRounds);
+
+    const user = this.repository.create({
+      email: dto.email.trim().toLowerCase(),
+      passwordHash,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      role: dto.role,
+      district: dto.district,
+      isActive: true,
+      profileCompleted: Boolean(dto.district),
+    });
+
+    const saved = await this.repository.save(user);
+
+    const actingUser = await this.findById(actingUserId);
+    await this.auditService.log({
+      action: 'admin_user_created',
+      entityType: 'User',
+      entityId: String(saved.id),
+      details: {
+        createdEmail: saved.email,
+        role: saved.role,
+      },
+      author: actingUser ?? null,
+    });
+
+    return this.toSafe(saved);
+  }
+
+  // D08 / D09 : PATCH /admin/users/:id/role
+  // Règle : l'administrateur ne peut pas se retirer lui-même son rôle admin
+  async adminUpdateUserRole(
+    targetUserId: number,
+    newRole: UserRole,
+    actingUserId: number,
+  ): Promise<SafeUser> {
+    const targetUser = await this.findById(targetUserId);
+    if (!targetUser) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    if (targetUser.id === actingUserId && newRole !== UserRole.ADMIN) {
+      throw new BadRequestException(
+        'Un administrateur ne peut pas se retirer à lui-même le rôle administrateur.',
+      );
+    }
+
+    const previousRole = targetUser.role;
+    targetUser.role = newRole;
+    const saved = await this.repository.save(targetUser);
+
+    const actingUser = await this.findById(actingUserId);
+    await this.auditService.log({
+      action: 'admin_user_role_updated',
+      entityType: 'User',
+      entityId: String(targetUserId),
+      details: {
+        userEmail: targetUser.email,
+        previousRole,
+        newRole,
+      },
+      author: actingUser ?? null,
+    });
+
+    return this.toSafe(saved);
+  }
+
+  // D08 / D09 : PATCH /admin/users/:id/status
+  // Règle : l'administrateur ne peut pas se désactiver lui-même
+  async adminUpdateUserStatus(
+    targetUserId: number,
+    isActive: boolean,
+    actingUserId: number,
+  ): Promise<SafeUser> {
+    const targetUser = await this.findById(targetUserId);
+    if (!targetUser) {
+      throw new NotFoundException('Utilisateur non trouvé');
+    }
+
+    if (targetUser.id === actingUserId && !isActive) {
+      throw new BadRequestException(
+        'Un administrateur ne peut pas désactiver son propre compte.',
+      );
+    }
+
+    targetUser.isActive = isActive;
+    const saved = await this.repository.save(targetUser);
+
+    const actingUser = await this.findById(actingUserId);
+    await this.auditService.log({
+      action: isActive ? 'admin_user_activated' : 'admin_user_deactivated',
+      entityType: 'User',
+      entityId: String(targetUserId),
+      details: {
+        userEmail: targetUser.email,
+        role: targetUser.role,
+        isActive,
+      },
+      author: actingUser ?? null,
+    });
+
+    return this.toSafe(saved);
+  }
+
   toSafe(user: User): SafeUser {
     const {
       passwordHash: _passwordHash,

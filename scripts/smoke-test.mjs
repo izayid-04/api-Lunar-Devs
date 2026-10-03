@@ -36,12 +36,15 @@ function findForbiddenKeys(obj, path = '') {
 
 let lastRequestLeaks = [];
 
-async function request(path, options = {}) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function request(path, options = {}, retries = 2) {
   const url = `${baseUrl}${path}`;
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
+  await sleep(150); // Léger espacement pour respecter le serveur Apache/Passenger
   try {
     const res = await fetch(url, {
       method: options.method || 'GET',
@@ -60,6 +63,11 @@ async function request(path, options = {}) {
 
     return { status: res.status, data, headers: res.headers, securityLeaks: lastRequestLeaks };
   } catch (err) {
+    if (retries > 0) {
+      await sleep(1000);
+      return request(path, options, retries - 1);
+    }
+    console.error(`[FETCH ERROR] ${options.method || 'GET'} ${path}: ${err.message}`);
     lastRequestLeaks = [];
     return { status: 0, error: err.message, securityLeaks: [] };
   }
@@ -226,6 +234,45 @@ async function run() {
     body: { isActive: true },
   });
   record('PATCH /agent/citizens/:id/status', 'id inexistant (404)', 404, rCitizenStatus404.status);
+
+  // 5b. Gestion des Comptes par l'Admin (D08, D09)
+  console.log(`\n--- Gestion des Comptes par l'Admin (D08, D09) ---`);
+  const rAdminUsersList = await request('/admin/users', { headers: authH(adminToken) });
+  record('GET /admin/users', 'admin liste utilisateurs (200)', 200, rAdminUsersList.status);
+
+  const rAdminUsersCit = await request('/admin/users', { headers: authH(citizenToken) });
+  record('GET /admin/users', 'citoyen refusé (403)', 403, rAdminUsersCit.status);
+
+  const testAgentEmail = `test.agent.${Date.now()}@novaterra.local`;
+  const rAdminCreateAgent = await request('/admin/users', {
+    method: 'POST',
+    headers: authH(adminToken),
+    body: {
+      email: testAgentEmail,
+      password: 'AgentCreated123!',
+      firstName: '[TEST] Agent',
+      lastName: 'Municipal',
+      role: 'agent',
+    },
+  });
+  record('POST /admin/users', 'admin création agent (201)', 201, rAdminCreateAgent.status);
+  const createdAgentId = rAdminCreateAgent.data?.id;
+
+  if (createdAgentId) {
+    const rAdminPatchRole = await request(`/admin/users/${createdAgentId}/role`, {
+      method: 'PATCH',
+      headers: authH(adminToken),
+      body: { role: 'citizen' },
+    });
+    record('PATCH /admin/users/:id/role', 'admin mise à jour rôle (200)', 200, rAdminPatchRole.status);
+
+    const rAdminPatchStatus = await request(`/admin/users/${createdAgentId}/status`, {
+      method: 'PATCH',
+      headers: authH(adminToken),
+      body: { isActive: false },
+    });
+    record('PATCH /admin/users/:id/status', 'admin désactivation compte (200)', 200, rAdminPatchStatus.status);
+  }
 
   // 6. Services Municipaux
   console.log(`\n--- Services Municipaux ---`);
