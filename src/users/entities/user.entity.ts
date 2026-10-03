@@ -9,7 +9,7 @@ export class User {
   @Column({ unique: true })
   email!: string;
 
-  @Column({ name: 'password_hash' })
+  @Column({ name: 'password_hash', select: false })
   passwordHash!: string;
 
   @Column({ name: 'first_name' })
@@ -41,10 +41,10 @@ export class User {
   @Column({ name: 'profile_completed', default: false })
   profileCompleted!: boolean;
 
-  @Column({ name: 'failed_login_attempts', default: 0 })
+  @Column({ name: 'failed_login_attempts', default: 0, select: false })
   failedLoginAttempts!: number;
 
-  @Column({ name: 'locked_until', type: 'datetime', nullable: true })
+  @Column({ name: 'locked_until', type: 'datetime', nullable: true, select: false })
   lockedUntil!: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })

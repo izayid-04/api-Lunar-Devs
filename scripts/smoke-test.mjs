@@ -17,6 +17,25 @@ console.log(`======================================================\n`);
 
 const results = [];
 
+const FORBIDDEN_KEYS = ['password', 'passwordHash', 'hash', 'lockedUntil'];
+
+function findForbiddenKeys(obj, path = '') {
+  const leaks = [];
+  if (!obj || typeof obj !== 'object') return leaks;
+  for (const [key, value] of Object.entries(obj)) {
+    const currentPath = path ? `${path}.${key}` : key;
+    if (FORBIDDEN_KEYS.includes(key)) {
+      leaks.push(`${currentPath}`);
+    }
+    if (value && typeof value === 'object') {
+      leaks.push(...findForbiddenKeys(value, currentPath));
+    }
+  }
+  return leaks;
+}
+
+let lastRequestLeaks = [];
+
 async function request(path, options = {}) {
   const url = `${baseUrl}${path}`;
   const headers = {
@@ -36,24 +55,35 @@ async function request(path, options = {}) {
     } else {
       data = await res.text().catch(() => null);
     }
-    return { status: res.status, data, headers: res.headers };
+
+    lastRequestLeaks = (data && typeof data === 'object') ? findForbiddenKeys(data) : [];
+
+    return { status: res.status, data, headers: res.headers, securityLeaks: lastRequestLeaks };
   } catch (err) {
-    return { status: 0, error: err.message };
+    lastRequestLeaks = [];
+    return { status: 0, error: err.message, securityLeaks: [] };
   }
 }
 
 function record(route, testCase, expected, actual, details = '') {
-  const ok = expected === actual;
+  let ok = expected === actual;
+  let statusMessage = details;
+
+  if (lastRequestLeaks && lastRequestLeaks.length > 0) {
+    ok = false;
+    statusMessage = `[FAILLE SÉCURITÉ] Fuite détectée : ${lastRequestLeaks.join(', ')}`;
+  }
+
   results.push({
     route,
     testCase,
     expected,
     actual,
     status: ok ? 'OK' : 'ÉCHEC',
-    details,
+    details: statusMessage,
   });
   const icon = ok ? '✅' : '❌';
-  console.log(`${icon} [${ok ? 'OK' : 'FAIL'}] ${route} | ${testCase} -> Attendu: ${expected}, Reçu: ${actual}`);
+  console.log(`${icon} [${ok ? 'OK' : 'FAIL'}] ${route} | ${testCase} -> Attendu: ${expected}, Reçu: ${actual}${statusMessage ? ` (${statusMessage})` : ''}`);
 }
 
 async function run() {

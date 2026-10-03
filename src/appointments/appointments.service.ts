@@ -49,7 +49,20 @@ export class AppointmentsService {
       qb.andWhere('service.slug = :slug', { slug: String(serviceIdOrSlug) });
     }
 
-    return qb.orderBy('slot.starts_at', 'ASC').getMany();
+    const slots = await qb.orderBy('slot.starts_at', 'ASC').getMany();
+
+    // Règle de confidentialité : les routes publiques n'exposent que le prénom et le nom de l'agent, jamais son email
+    return slots.map((slot) => {
+      if (slot.agent) {
+        slot.agent = {
+          id: slot.agent.id,
+          firstName: slot.agent.firstName,
+          lastName: slot.agent.lastName,
+          role: slot.agent.role,
+        } as User;
+      }
+      return slot;
+    });
   }
 
   // Book an appointment slot with optimistic concurrency control

@@ -54,8 +54,26 @@ export class UsersService {
     return this.repository.findOne({ where: { email } });
   }
 
+  // Utilisé spécifiquement pour la connexion : sélectionne explicitement passwordHash
+  findForAuthByEmail(email: string): Promise<User | null> {
+    return this.repository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.email = :email', { email })
+      .getOne();
+  }
+
   findById(id: number): Promise<User | null> {
     return this.repository.findOne({ where: { id } });
+  }
+
+  // Utilisé spécifiquement pour DELETE /me : sélectionne explicitement passwordHash
+  findWithPasswordById(id: number): Promise<User | null> {
+    return this.repository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.id = :id', { id })
+      .getOne();
   }
 
   async findSafeById(id: number): Promise<SafeUser> {
@@ -106,7 +124,7 @@ export class UsersService {
 
   // F33 : DELETE /me avec mot de passe et nettoyage sécurisé des données
   async deleteAccount(userId: number, passwordConfirmation: string): Promise<{ success: boolean; message: string }> {
-    const user = await this.findById(userId);
+    const user = await this.findWithPasswordById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
     }

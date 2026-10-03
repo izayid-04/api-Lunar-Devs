@@ -68,7 +68,7 @@ export class AuthService {
     }
 
     // 2. Validate credentials
-    const user = await this.usersService.findByEmail(normalizedEmail);
+    const user = await this.usersService.findForAuthByEmail(normalizedEmail);
     const passwordValid =
       user && (await bcrypt.compare(dto.password, user.passwordHash));
 
