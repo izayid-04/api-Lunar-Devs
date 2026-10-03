@@ -1,6 +1,7 @@
 import * as bcrypt from 'bcryptjs';
 import type { DataSource } from 'typeorm';
 import { Announcement } from '../announcements/entities/announcement.entity.js';
+import { DISTRICTS } from '../common/districts.js';
 import { MunicipalService } from '../services/entities/municipal-service.entity.js';
 import { User } from '../users/entities/user.entity.js';
 import { UserRole } from '../users/user-role.enum.js';
@@ -88,7 +89,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "Guichet unique pour les démarches d'état civil (naissance, mariage, décès), les demandes d'urbanisme et les doléances citoyennes. Accueil du public et orientation vers les services compétents.",
     contact: '+269 773 10 01 · mairie@novaterra.city',
     horaires: 'Lun-Ven 8h-16h',
-    district: 'Centre-Ville',
+    district: DISTRICTS[0],
   },
   {
     slug: 'commissariat-central',
@@ -98,7 +99,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       'Poste de police principal de Nova Terra, en charge de la sécurité du centre-ville et de la coordination avec les postes de quartier. Dépôt de plaintes et signalements.',
     contact: '+269 773 10 02 · police@novaterra.city',
     horaires: '24h/24, 7j/7',
-    district: 'Centre-Ville',
+    district: DISTRICTS[0],
   },
   {
     slug: 'bibliotheque-municipale',
@@ -108,7 +109,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "Médiathèque proposant prêt de livres et de ressources numériques, salles de travail silencieuses, et ateliers d'initiation informatique pour tous les âges.",
     contact: '+269 773 10 03 · bibliotheque@novaterra.city',
     horaires: 'Mar-Sam 9h-18h',
-    district: 'Centre-Ville',
+    district: DISTRICTS[0],
   },
   {
     slug: 'hopital-etoile-du-sud',
@@ -118,7 +119,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "Établissement hospitalier principal du quartier de Port Stellaire, avec service d'urgences, maternité et consultations spécialisées.",
     contact: '+269 773 20 01 · hopital@novaterra.city',
     horaires: '24h/24, 7j/7',
-    district: 'Port Stellaire',
+    district: DISTRICTS[1],
   },
   {
     slug: 'office-du-tourisme-spatial',
@@ -128,7 +129,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "Point d'accueil pour les visiteurs souhaitant découvrir le port spatial de Nova Terra : réservation de visites guidées, billetterie des navettes d'observation et informations pratiques.",
     contact: '+269 773 20 02 · tourisme@novaterra.city',
     horaires: 'Lun-Dim 9h-19h',
-    district: 'Port Stellaire',
+    district: DISTRICTS[1],
   },
   {
     slug: 'ecole-primaire-des-dunes',
@@ -138,7 +139,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       'École primaire publique accueillant les enfants de 6 à 11 ans du quartier des Dunes, avec cantine scolaire et activités périscolaires.',
     contact: '+269 773 30 01 · ecole-dunes@novaterra.city',
     horaires: 'Lun-Ven 7h30-15h30',
-    district: 'Quartier des Dunes',
+    district: DISTRICTS[2],
   },
   {
     slug: 'service-de-la-voirie',
@@ -148,7 +149,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "En charge de l'entretien des chaussées, de l'éclairage public et de la signalisation sur l'ensemble de la ville. Traite les signalements transmis via la plateforme (nids de poule, lampadaires en panne, etc.).",
     contact: '+269 773 40 01 · voirie@novaterra.city',
     horaires: 'Lun-Ven 7h-15h',
-    district: 'Hauts de Nova',
+    district: DISTRICTS[3],
   },
   {
     slug: 'centre-eau-energie',
@@ -158,7 +159,7 @@ const MUNICIPAL_SERVICES: Omit<MunicipalService, 'id'>[] = [
       "Gère la distribution d'eau potable et d'énergie sur Nova Terra, les raccordements, et les interventions d'urgence en cas de coupure ou de fuite.",
     contact: '+269 773 50 01 · eau-energie@novaterra.city',
     horaires: 'Lun-Sam 8h-17h, urgences 24h/24',
-    district: 'Faubourg Est',
+    district: DISTRICTS[4],
   },
 ];
 

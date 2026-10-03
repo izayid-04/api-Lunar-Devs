@@ -51,6 +51,14 @@ d'erreur) dans [`docs/API.md`](./API.md).
 
 Détail complet des routes dans [`docs/API.md`](./API.md).
 
+## Chantier 1 — Profil (prépare D12, F29, F31)
+
+| Code | Demande | Satisfait par |
+| ---- | ------- | -------------- |
+| **D12** (prépa) | Profil habitant (quartier, langue, vulnérabilité) | `User.district`, `preferredLanguage`, `isVulnerable`, `profileCompleted` (`src/users/entities/user.entity.ts`). `PATCH /me` pour les compléter — `district` validé contre la même liste de quartiers que `GET /services` (`src/common/districts.ts`). `profileCompleted` est calculé côté serveur, jamais réglable par le client. |
+
+Ce chantier prépare le terrain pour les alertes ciblées par quartier/vulnérabilité (D18, F29) et les recommandations IA (F31) — pas encore implémentées à ce stade.
+
 ## Prochains blocs
 
 À compléter au fur et à mesure que les blocs suivants du sujet Nova

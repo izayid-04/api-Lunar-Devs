@@ -21,6 +21,22 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CITIZEN })
   role!: UserRole;
 
+  // Profile fields (D12, F29, F31 prep) — all optional until the user
+  // completes their profile via PATCH /me.
+  @Column({ type: 'varchar', nullable: true })
+  district!: string | null;
+
+  @Column({ name: 'preferred_language', type: 'varchar', nullable: true })
+  preferredLanguage!: string | null;
+
+  @Column({ name: 'is_vulnerable', default: false })
+  isVulnerable!: boolean;
+
+  // Server-computed (not client-settable directly): true once district
+  // and preferredLanguage are both set. See UsersService.updateProfile.
+  @Column({ name: 'profile_completed', default: false })
+  profileCompleted!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

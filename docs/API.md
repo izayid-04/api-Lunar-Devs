@@ -69,9 +69,26 @@ validation (`400`, une par champ invalide).
 - **Rôle** : connecté (tout rôle).
 - **Réponse `200`** :
   ```json
-  { "id": "1", "email": "a@example.com", "firstName": "A", "lastName": "B", "role": "citizen", "createdAt": "..." }
+  {
+    "id": "1", "email": "a@example.com", "firstName": "A", "lastName": "B", "role": "citizen",
+    "district": "Port Stellaire", "preferredLanguage": "fr", "isVulnerable": false, "profileCompleted": true,
+    "createdAt": "..."
+  }
   ```
+  `district`/`preferredLanguage` sont `null` et `profileCompleted: false` tant que le profil n'a pas été complété.
 - **`401`** sans token ou token invalide/expiré.
+
+### `PATCH /me`
+- **Rôle** : connecté (tout rôle).
+- **Corps** — tous les champs sont optionnels, seuls ceux fournis sont modifiés :
+  ```json
+  { "district": "Port Stellaire", "preferredLanguage": "fr", "isVulnerable": true }
+  ```
+  - `district` : une valeur parmi `Centre-Ville`, `Port Stellaire`, `Quartier des Dunes`, `Hauts de Nova`, `Faubourg Est` (mêmes quartiers que `GET /services`). **`400`** si une autre valeur est envoyée.
+  - `preferredLanguage` : texte libre (code ou nom de langue), 50 caractères max.
+  - `isVulnerable` : booléen.
+- **Réponse `200`** : le profil mis à jour (même forme que `GET /me`).
+  `profileCompleted` passe automatiquement à `true` dès que `district` **et** `preferredLanguage` sont tous les deux renseignés — ce champ n'est jamais réglable directement par le client.
 
 ### `GET /agent/ping`
 - **Rôle** : `agent`, `admin`.

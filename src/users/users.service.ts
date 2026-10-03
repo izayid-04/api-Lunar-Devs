@@ -61,6 +61,37 @@ export class UsersService {
     return this.repository.count({ where: { role } });
   }
 
+  async updateProfile(
+    id: number,
+    patch: {
+      district?: string;
+      preferredLanguage?: string;
+      isVulnerable?: boolean;
+    },
+  ): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Explicit undefined checks, not Object.assign: an omitted optional
+    // field still exists as an explicit `undefined` own property on the
+    // DTO instance (TS class field semantics), which would otherwise
+    // null out a field the client didn't intend to touch.
+    if (patch.district !== undefined) user.district = patch.district;
+    if (patch.preferredLanguage !== undefined) {
+      user.preferredLanguage = patch.preferredLanguage;
+    }
+    if (patch.isVulnerable !== undefined) user.isVulnerable = patch.isVulnerable;
+
+    // Server-computed, not client-settable: "complete" once the two
+    // required fields are filled in.
+    user.profileCompleted = Boolean(user.district && user.preferredLanguage);
+
+    const saved = await this.repository.save(user);
+    return this.toSafe(saved);
+  }
+
   toSafe(user: User): SafeUser {
     const { passwordHash: _passwordHash, id, ...safe } = user;
     return { ...safe, id: String(id) };
