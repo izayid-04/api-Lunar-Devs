@@ -1,5 +1,5 @@
 import * as bcrypt from 'bcryptjs';
-import type { DataSource } from 'typeorm';
+import { MoreThan, type DataSource } from 'typeorm';
 import { Announcement } from '../announcements/entities/announcement.entity.js';
 import { DISTRICTS } from '../common/districts.js';
 import { MunicipalService } from '../services/entities/municipal-service.entity.js';
@@ -414,7 +414,13 @@ export async function seedAlerts(dataSource: DataSource): Promise<void> {
   );
 }
 
-// Seed appointment slots over the next 7 days for municipal services
+// Idempotent & self-healing: ensures at least one AVAILABLE slot exists in
+// the next 7 days at all times. On a redeploy where every previously
+// seeded slot has slipped into the past (or been booked), this detects
+// that no future-available slot remains and seeds a fresh batch — so the
+// demo never runs dry on bookable appointments just because the calendar
+// moved on since the last deploy. Never touches slots that already exist
+// (booked or not), so a citizen's existing booking is never affected.
 export async function seedAppointmentSlots(dataSource: DataSource): Promise<void> {
   const { AppointmentSlot } = await import(
     '../appointments/entities/appointment-slot.entity.js'
@@ -432,13 +438,17 @@ export async function seedAppointmentSlots(dataSource: DataSource): Promise<void
     return;
   }
 
-  const existingSlotsCount = await slotRepo.count();
-  if (existingSlotsCount > 0) {
-    console.log('Appointment slots already seeded, skipping.');
+  const now = new Date();
+  const futureAvailableCount = await slotRepo.count({
+    where: { isAvailable: true, startsAt: MoreThan(now) },
+  });
+  if (futureAvailableCount > 0) {
+    console.log(
+      'Appointment slots: des créneaux libres existent déjà dans les 7 prochains jours, rien à faire.',
+    );
     return;
   }
 
-  const now = new Date();
   let created = 0;
 
   // For the first 3 services (Mairie, Commissariat, Hôpital), create slots over the next 7 days
@@ -461,37 +471,47 @@ export async function seedAppointmentSlots(dataSource: DataSource): Promise<void
       const afternoonEnd = new Date(afternoonStart);
       afternoonEnd.setMinutes(30);
 
-      const slotsToCreate = [
-        slotRepo.create({
-          service: srv,
-          agent: agent ?? null,
-          startsAt: morningStart,
-          endsAt: morningEnd,
-          location: `Guichet ${srv.name} — Salle 101`,
-          isAvailable: true,
-        }),
-        slotRepo.create({
-          service: srv,
-          agent: agent ?? null,
-          startsAt: afternoonStart,
-          endsAt: afternoonEnd,
-          location: `Guichet ${srv.name} — Salle 102`,
-          isAvailable: true,
-        }),
+      const candidates = [
+        { startsAt: morningStart, endsAt: morningEnd, room: 'Salle 101' },
+        { startsAt: afternoonStart, endsAt: afternoonEnd, room: 'Salle 102' },
       ];
 
-      await slotRepo.save(slotsToCreate);
-      created += slotsToCreate.length;
+      for (const candidate of candidates) {
+        // Guards against double-creating a slot that already exists for
+        // this exact service + time (e.g. a slot that's in the future
+        // but currently booked — isAvailable: false — must not be
+        // duplicated just because it didn't count toward
+        // futureAvailableCount above).
+        const existing = await slotRepo.findOne({
+          where: { service: { id: srv.id }, startsAt: candidate.startsAt },
+        });
+        if (existing) continue;
+
+        await slotRepo.save(
+          slotRepo.create({
+            service: srv,
+            agent: agent ?? null,
+            startsAt: candidate.startsAt,
+            endsAt: candidate.endsAt,
+            location: `Guichet ${srv.name} — ${candidate.room}`,
+            isAvailable: true,
+          }),
+        );
+        created++;
+      }
     }
   }
 
   console.log(`Seeded ${created} appointment slot(s) for the next 7 days.`);
 }
 
+// Idempotent per line `code` (not a global count): a transport line
+// missing from the table — because an earlier deploy's seeding run was
+// interrupted partway through, say — gets created on the next boot
+// instead of being silently skipped forever just because the table is
+// no longer empty.
 export async function seedTransports(dataSource: DataSource): Promise<void> {
   const repo = dataSource.getRepository(TransportLine);
-  const count = await repo.count();
-  if (count > 0) return;
 
   const defaultLines = [
     {
@@ -548,21 +568,32 @@ export async function seedTransports(dataSource: DataSource): Promise<void> {
     },
   ];
 
-  await repo.save(repo.create(defaultLines));
-  console.log('Seeded municipal transport lines.');
-
-  await seedParticipationAndPartners(dataSource);
+  let created = 0;
+  for (const line of defaultLines) {
+    const existing = await repo.findOne({ where: { code: line.code } });
+    if (existing) continue;
+    await repo.save(repo.create(line));
+    created++;
+  }
+  console.log(
+    created > 0
+      ? `Seeded ${created} transport line(s).`
+      : 'Transport lines already seeded, skipping.',
+  );
 }
 
-export async function seedParticipationAndPartners(dataSource: DataSource): Promise<void> {
-  // 1. Seed 4 Projects
+// Idempotent per project `title` (not a global count): a project missing
+// from the table gets created on the next boot instead of being silently
+// skipped forever just because the table already has other rows. Each
+// project's consultation is likewise created only if that project does
+// not already have one.
+export async function seedParticipationProjects(dataSource: DataSource): Promise<void> {
   const { Project, ProjectStatus } = await import('../participation/entities/project.entity.js');
   const { Consultation } = await import('../participation/entities/consultation.entity.js');
   const projectRepo = dataSource.getRepository(Project);
   const consultationRepo = dataSource.getRepository(Consultation);
 
-  const existingProjectsCount = await projectRepo.count();
-  if (existingProjectsCount === 0) {
+  {
     const projectsData = [
       {
         title: 'Végétalisation du Dôme Central',
@@ -613,30 +644,56 @@ export async function seedParticipationAndPartners(dataSource: DataSource): Prom
       },
     ];
 
+    let createdProjects = 0;
+    let createdConsultations = 0;
+
     for (const p of projectsData) {
       const { consultation, ...pData } = p;
-      const createdProject = await projectRepo.save(projectRepo.create(pData));
+
+      let project = await projectRepo.findOne({ where: { title: p.title } });
+      if (!project) {
+        project = await projectRepo.save(projectRepo.create(pData));
+        createdProjects++;
+      }
+
       if (consultation) {
-        await consultationRepo.save(
-          consultationRepo.create({
-            project: createdProject,
-            projectId: createdProject.id,
-            question: consultation.question,
-            options: consultation.options,
-            endDate: consultation.endDate,
-          }),
-        );
+        const existingConsultation = await consultationRepo.findOne({
+          where: { projectId: project.id },
+        });
+        if (!existingConsultation) {
+          await consultationRepo.save(
+            consultationRepo.create({
+              project,
+              projectId: project.id,
+              question: consultation.question,
+              options: consultation.options,
+              endDate: consultation.endDate,
+            }),
+          );
+          createdConsultations++;
+        }
       }
     }
-    console.log('Seeded 4 participation projects with consultations.');
+    console.log(
+      `Participation: ${createdProjects} projet(s) créé(s), ${createdConsultations} consultation(s) créée(s).`,
+    );
   }
+}
 
-  // 2. Seed 3 Associations (Partners)
+// Idempotent per partner `name` (not a global count): a partner missing
+// from the table gets created on the next boot instead of being silently
+// skipped forever just because the table already has other rows. This is
+// the exact bug that left `partners` empty in production: it used to run
+// only once, nested inside seedTransports's now-removed "table is empty"
+// guard, so once transports existed the whole block — including partners
+// — was skipped on every later deploy even though partners itself was
+// still empty (its own seeding attempt had failed, e.g. a schema mismatch
+// on `opening_hours`).
+export async function seedPartners(dataSource: DataSource): Promise<void> {
   const { Partner } = await import('../partners/entities/partner.entity.js');
   const partnerRepo = dataSource.getRepository(Partner);
 
-  const existingPartnersCount = await partnerRepo.count();
-  if (existingPartnersCount === 0) {
+  {
     const partnersData = [
       {
         name: 'Éco-Pionniers de Nova Terra',
@@ -664,10 +721,233 @@ export async function seedParticipationAndPartners(dataSource: DataSource): Prom
       },
     ];
 
-    await partnerRepo.save(partnerRepo.create(partnersData));
-    console.log('Seeded 3 partner associations.');
+    let created = 0;
+    for (const partner of partnersData) {
+      const existing = await partnerRepo.findOne({ where: { name: partner.name } });
+      if (existing) continue;
+      await partnerRepo.save(partnerRepo.create(partner));
+      created++;
+    }
+    console.log(
+      created > 0
+        ? `Seeded ${created} partner association(s).`
+        : 'Partner associations already seeded, skipping.',
+    );
   }
 }
 
+// Gives the demo citizen some realistic activity to show the jury, without
+// ever touching their email/password. Each kind of activity (messages,
+// idea, service feedback, consultation response) is seeded independently
+// and only if that citizen has none of that kind yet — never duplicated
+// on a later redeploy, and never added on top of activity the citizen (or
+// a juror using that account) created themselves.
+export async function seedDemoCitizenActivity(dataSource: DataSource): Promise<void> {
+  const email = process.env.DEMO_CITIZEN_EMAIL ?? 'citoyen.demo@novaterra.local';
+  const citizen = await dataSource.getRepository(User).findOne({ where: { email } });
+  if (!citizen) {
+    console.warn(
+      'Skipping demo citizen activity seed: demo citizen account not found yet.',
+    );
+    return;
+  }
+
+  await seedDemoCitizenMessages(dataSource, citizen);
+  await seedDemoCitizenIdea(dataSource, citizen);
+  await seedDemoCitizenServiceFeedback(dataSource, citizen);
+  await seedDemoCitizenConsultationResponse(dataSource, citizen);
+}
+
+async function seedDemoCitizenMessages(dataSource: DataSource, citizen: User): Promise<void> {
+  const { CitizenMessage } = await import('../messages/entities/citizen-message.entity.js');
+  const { MessageStatusHistory } = await import(
+    '../messages/entities/message-status-history.entity.js'
+  );
+  const { MessageStatus } = await import('../messages/message-status.enum.js');
+  const { MessageType } = await import('../messages/message-type.enum.js');
+  const { MessagePriority } = await import('../messages/message-priority.enum.js');
+  const { buildMessageReference } = await import('../messages/reference.util.js');
+
+  const messageRepo = dataSource.getRepository(CitizenMessage);
+  const historyRepo = dataSource.getRepository(MessageStatusHistory);
+
+  const existingCount = await messageRepo.count({ where: { authorId: citizen.id } });
+  if (existingCount > 0) {
+    return;
+  }
+
+  const admin = await dataSource
+    .getRepository(User)
+    .findOne({ where: { role: UserRole.ADMIN } });
+
+  const demoMessages = [
+    {
+      type: MessageType.SIGNALEMENT,
+      subject: 'Nid de poule dangereux Avenue du Port',
+      body:
+        "Un nid de poule profond s'est formé devant le numéro 42, il a déjà causé une crevaison à un voisin. Une intervention rapide serait appréciée.",
+      category: 'voirie',
+      preciseLocation: 'Avenue du Port, devant le 42',
+      priority: MessagePriority.HAUTE,
+      history: [MessageStatus.NOUVEAU, MessageStatus.EN_COURS] as const,
+    },
+    {
+      type: MessageType.SIGNALEMENT,
+      subject: 'Éclairage public en panne Rue des Savoirs',
+      body:
+        'Trois lampadaires consécutifs sont éteints depuis une semaine, la rue est très sombre le soir.',
+      category: 'eclairage',
+      preciseLocation: 'Rue des Savoirs, entre le 8 et le 14',
+      priority: MessagePriority.NORMALE,
+      history: [
+        MessageStatus.NOUVEAU,
+        MessageStatus.EN_COURS,
+        MessageStatus.TRAITE,
+      ] as const,
+    },
+    {
+      type: MessageType.QUESTION,
+      subject: 'Horaires de la déchèterie municipale',
+      body: "Pourriez-vous me confirmer les horaires d'ouverture de la déchèterie le week-end ?",
+      category: 'autre',
+      preciseLocation: undefined,
+      priority: MessagePriority.NORMALE,
+      history: [MessageStatus.NOUVEAU] as const,
+    },
+  ];
+
+  const historyNotes: Record<string, string> = {
+    [MessageStatus.NOUVEAU]: 'Signalement enregistré',
+    [MessageStatus.EN_COURS]: 'Prise en charge par le service compétent',
+    [MessageStatus.TRAITE]: 'Intervention terminée',
+  };
+
+  let created = 0;
+  for (const m of demoMessages) {
+    const saved = await messageRepo.save(
+      messageRepo.create({
+        authorId: citizen.id,
+        type: m.type,
+        subject: m.subject,
+        body: m.body,
+        category: m.category,
+        district:
+          m.type === MessageType.SIGNALEMENT ? citizen.district ?? DISTRICTS[1] : null,
+        preciseLocation: m.preciseLocation ?? null,
+        priority: m.priority,
+        status: m.history[m.history.length - 1],
+      }),
+    );
+    saved.reference = buildMessageReference(saved.id);
+    await messageRepo.save(saved);
+
+    for (const status of m.history) {
+      await historyRepo.save(
+        historyRepo.create({
+          messageId: saved.id,
+          status,
+          note: historyNotes[status],
+          changedById: status === MessageStatus.NOUVEAU ? citizen.id : admin?.id ?? citizen.id,
+        }),
+      );
+    }
+    created++;
+  }
+  console.log(`Seeded ${created} demo message(s)/signalement(s) for the demo citizen.`);
+}
+
+async function seedDemoCitizenIdea(dataSource: DataSource, citizen: User): Promise<void> {
+  const { Idea } = await import('../participation/entities/idea.entity.js');
+  const ideaRepo = dataSource.getRepository(Idea);
+
+  const existingCount = await ideaRepo.count({ where: { citizenId: citizen.id } });
+  if (existingCount > 0) {
+    return;
+  }
+
+  const dateStr = new Date().getFullYear().toString();
+  const rand = Math.floor(1000 + Math.random() * 9000);
+
+  await ideaRepo.save(
+    ideaRepo.create({
+      reference: `IDEE-${dateStr}-${rand}`,
+      title: 'Composteurs collectifs dans les Dunes',
+      description:
+        'Installer des composteurs collectifs dans le quartier des Dunes pour réduire les déchets organiques et produire du compost pour les jardins partagés.',
+      district: citizen.district ?? DISTRICTS[2],
+      citizenId: citizen.id,
+    }),
+  );
+  console.log('Seeded 1 demo idea for the demo citizen.');
+}
+
+async function seedDemoCitizenServiceFeedback(
+  dataSource: DataSource,
+  citizen: User,
+): Promise<void> {
+  const { ServiceFeedback } = await import(
+    '../service-feedback/entities/service-feedback.entity.js'
+  );
+  const feedbackRepo = dataSource.getRepository(ServiceFeedback);
+
+  const existingCount = await feedbackRepo.count({ where: { citizenId: citizen.id } });
+  if (existingCount > 0) {
+    return;
+  }
+
+  const service = await dataSource
+    .getRepository(MunicipalService)
+    .findOne({ where: { slug: 'hopital-etoile-du-sud' } });
+  if (!service) {
+    return;
+  }
+
+  const refNumber = Math.floor(100000 + Math.random() * 900000);
+  await feedbackRepo.save(
+    feedbackRepo.create({
+      serviceId: service.id,
+      citizenId: citizen.id,
+      rating: 4,
+      comment: "Accueil rapide aux urgences, personnel à l'écoute. Un peu d'attente en pharmacie.",
+      reference: `AVIS-${service.id}-${refNumber}`,
+    }),
+  );
+  console.log('Seeded 1 demo service feedback for the demo citizen.');
+}
+
+async function seedDemoCitizenConsultationResponse(
+  dataSource: DataSource,
+  citizen: User,
+): Promise<void> {
+  const { ConsultationResponse } = await import(
+    '../participation/entities/consultation-response.entity.js'
+  );
+  const { Consultation } = await import('../participation/entities/consultation.entity.js');
+  const responseRepo = dataSource.getRepository(ConsultationResponse);
+
+  const existingCount = await responseRepo.count({ where: { citizenId: citizen.id } });
+  if (existingCount > 0) {
+    return;
+  }
+
+  const [consultation] = await dataSource
+    .getRepository(Consultation)
+    .find({ order: { id: 'ASC' }, take: 1 });
+  if (!consultation) {
+    return;
+  }
+
+  const refNumber = Math.floor(100000 + Math.random() * 900000);
+  await responseRepo.save(
+    responseRepo.create({
+      consultationId: consultation.id,
+      citizenId: citizen.id,
+      reference: `CONS-${consultation.id}-${refNumber}`,
+      option: consultation.options[0],
+      comment: 'Je soutiens cette option, elle me semble la plus utile pour le quartier.',
+    }),
+  );
+  console.log('Seeded 1 demo consultation response for the demo citizen.');
+}
 
 

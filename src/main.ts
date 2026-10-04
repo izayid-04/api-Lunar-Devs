@@ -12,8 +12,11 @@ import {
   seedAnnouncements,
   seedAppointmentSlots,
   seedDemoCitizen,
+  seedDemoCitizenActivity,
   seedDemoUsers,
   seedMunicipalServices,
+  seedParticipationProjects,
+  seedPartners,
   seedTransports,
 } from './database/seed.js';
 
@@ -103,21 +106,40 @@ async function bootstrap() {
     await dataSource.initialize();
     console.log('Database connected and migrations applied.');
 
-    try {
-      // Order matters: demo users first, so seedAnnouncements has an
-      // admin account to attribute seeded announcements to.
-      await seedDemoUsers(dataSource);
-      await seedDemoCitizen(dataSource);
-      await seedMunicipalServices(dataSource);
-      await seedAnnouncements(dataSource);
-      await seedAlerts(dataSource);
-      await seedAppointmentSlots(dataSource);
-      await seedTransports(dataSource);
-    } catch (seedErr) {
-      console.error(
-        'Seeding failed:',
-        seedErr instanceof Error ? seedErr.message : seedErr,
-      );
+    // Each step runs in its own try/catch: every seed function is
+    // idempotent on its own table (see database/seed.ts), so one step
+    // failing (e.g. a schema mismatch) must never prevent the other,
+    // unrelated steps from running on this same boot — and because each
+    // one is keyed on its own table being incomplete rather than a
+    // count() on a different table, a step that failed here will simply
+    // retry and succeed on the next deploy once the underlying issue is
+    // fixed, instead of being permanently skipped.
+    // Order matters: demo users first, so seedAnnouncements has an admin
+    // account to attribute seeded announcements to; seedDemoCitizenActivity
+    // last, since it depends on the demo citizen, municipal services and
+    // participation projects/consultations already existing.
+    const seedSteps: [string, () => Promise<void>][] = [
+      ['seedDemoUsers', () => seedDemoUsers(dataSource)],
+      ['seedDemoCitizen', () => seedDemoCitizen(dataSource)],
+      ['seedMunicipalServices', () => seedMunicipalServices(dataSource)],
+      ['seedAnnouncements', () => seedAnnouncements(dataSource)],
+      ['seedAlerts', () => seedAlerts(dataSource)],
+      ['seedAppointmentSlots', () => seedAppointmentSlots(dataSource)],
+      ['seedTransports', () => seedTransports(dataSource)],
+      ['seedParticipationProjects', () => seedParticipationProjects(dataSource)],
+      ['seedPartners', () => seedPartners(dataSource)],
+      ['seedDemoCitizenActivity', () => seedDemoCitizenActivity(dataSource)],
+    ];
+
+    for (const [name, step] of seedSteps) {
+      try {
+        await step();
+      } catch (seedErr) {
+        console.error(
+          `Seeding step "${name}" failed (will retry on next deploy):`,
+          seedErr instanceof Error ? seedErr.message : seedErr,
+        );
+      }
     }
   } catch (err) {
     console.error(
