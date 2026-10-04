@@ -18,6 +18,7 @@ import {
 } from './database/seed.js';
 
 import helmet from 'helmet';
+import compression from 'compression';
 import express from 'express';
 import { GlobalExceptionFilter } from './common/global-exception.filter.js';
 
@@ -26,6 +27,9 @@ async function bootstrap() {
 
   // 1. En-têtes de sécurité HTTP (Helmet)
   app.use(helmet());
+
+  // F78 : Compression gzip/deflate des réponses HTTP
+  app.use(compression());
 
   // 2. Limite stricte de taille des requêtes (JSON et URL-encoded max 2 Mo)
   app.use(express.json({ limit: '2mb' }));

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { User } from '../users/entities/user.entity.js';
+import { UserRole } from '../users/user-role.enum.js';
 import { CitizenMessage } from './entities/citizen-message.entity.js';
 import { MessageStatusHistory } from './entities/message-status-history.entity.js';
 import { MessageSupport } from './entities/message-support.entity.js';
@@ -17,6 +18,8 @@ import type { UpdateMessageStatusDto } from './dto/update-message-status.dto.js'
 import { MessageStatus } from './message-status.enum.js';
 import { MessageType } from './message-type.enum.js';
 import { buildMessageReference } from './reference.util.js';
+import { MessagePriority } from './message-priority.enum.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { AuditService } from '../audit/audit.service.js';
 
 export interface PublicStatusHistory {
@@ -38,12 +41,15 @@ export type PublicMessage = Pick<
   | 'district'
   | 'preciseLocation'
   | 'status'
+  | 'priority'
+  | 'isMedicalEmergency'
   | 'supportCount'
   | 'createdAt'
   | 'updatedAt'
 > & {
   history?: PublicStatusHistory[];
   hasSupported?: boolean;
+  emergencyInstructions?: string;
 };
 
 export type PublicMessageWithAuthor = PublicMessage & {
@@ -57,6 +63,7 @@ export class MessagesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private get repository() {
@@ -81,7 +88,46 @@ export class MessagesService {
   }
 
   async create(authorId: number, dto: CreateMessageDto): Promise<PublicMessage> {
+    // F81 : Honeypot check - si rempli, réponse factice 201 sans enregistrer
+    if (dto.website && dto.website.trim().length > 0) {
+      return {
+        id: Math.floor(100000 + Math.random() * 900000),
+        reference: `DEM-${new Date().getFullYear()}-SPAM`,
+        type: dto.type ?? MessageType.QUESTION,
+        subject: dto.subject,
+        body: dto.body,
+        category: dto.category,
+        district: dto.district ?? null,
+        preciseLocation: dto.preciseLocation ?? null,
+        status: MessageStatus.NOUVEAU,
+        priority: MessagePriority.NORMALE,
+        isMedicalEmergency: false,
+        supportCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        history: [],
+      };
+    }
+
+    // F82 : Refuser un message identique (même auteur, même contenu) envoyé moins de 60 s après le précédent
+    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+    const recentDuplicate = await this.repository.findOne({
+      where: {
+        author: { id: authorId },
+        body: dto.body.trim(),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (recentDuplicate && recentDuplicate.createdAt > sixtySecondsAgo) {
+      throw new ConflictException(
+        'Un message identique a déjà été envoyé il y a moins de 60 secondes. Veuillez patienter avant de renouveler votre envoi.',
+      );
+    }
+
     const isSignalement = dto.type === MessageType.SIGNALEMENT;
+    const isMedicalEmergency = dto.isMedicalEmergency === true;
+    const priority = isMedicalEmergency ? MessagePriority.URGENTE : MessagePriority.NORMALE;
 
     return await this.dataSource.transaction(async (manager) => {
       const messageRepo = manager.getRepository(CitizenMessage);
@@ -96,6 +142,8 @@ export class MessagesService {
         district: dto.district ?? null,
         preciseLocation: dto.preciseLocation ?? null,
         status: MessageStatus.NOUVEAU,
+        priority,
+        isMedicalEmergency,
         supportCount: 0,
       });
 
@@ -109,13 +157,43 @@ export class MessagesService {
       const initialHistory = historyRepo.create({
         message: saved,
         status: MessageStatus.NOUVEAU,
-        note: isSignalement ? 'Signalement enregistré' : 'Message envoyé',
+        note: isMedicalEmergency
+          ? '[URGENCE MÉDICALE] Signalement prioritaire'
+          : isSignalement
+            ? 'Signalement enregistré'
+            : 'Message envoyé',
         changedBy: { id: authorId } as User,
       });
       await historyRepo.save(initialHistory);
 
       saved.history = [initialHistory];
-      return this.toPublic(saved);
+
+      // F86 : Notification immédiate aux agents en cas d'urgence médicale
+      if (isMedicalEmergency) {
+        const agentsAndAdmins = await manager.getRepository(User).find({
+          where: [
+            { role: UserRole.AGENT },
+            { role: UserRole.ADMIN },
+          ],
+        });
+        const notifRepo = manager.getRepository(Notification);
+        for (const agent of agentsAndAdmins) {
+          const notif = notifRepo.create({
+            user: agent,
+            type: NotificationType.ALERT,
+            title: `[URGENCE MÉDICALE] Nouveau message urgent ${saved.reference ?? `#${saved.id}`} : ${saved.subject}`,
+            link: `/agent/messages`,
+          });
+          await notifRepo.save(notif);
+        }
+      }
+
+      const pub = this.toPublic(saved);
+      if (isMedicalEmergency) {
+        pub.emergencyInstructions =
+          "URGENCE MÉDICALE : Contactez immédiatement les secours au 15 (SAMU) ou le centre de secours d'urgence au 112 / 18.";
+      }
+      return pub;
     });
   }
 
@@ -172,6 +250,8 @@ export class MessagesService {
         district: pub.district,
         preciseLocation: pub.preciseLocation,
         status: pub.status,
+        priority: pub.priority,
+        isMedicalEmergency: pub.isMedicalEmergency,
         supportCount: pub.supportCount,
         createdAt: pub.createdAt,
         updatedAt: pub.updatedAt,
@@ -229,7 +309,8 @@ export class MessagesService {
   async findForAgents(
     status?: MessageStatus,
     type?: MessageType,
-    sort?: 'recent' | 'supports',
+    sort?: 'recent' | 'supports' | 'priority',
+    priority?: MessagePriority,
   ): Promise<{ messages: PublicMessageWithAuthor[]; counts: StatusCounts }> {
     const qb = this.repository
       .createQueryBuilder('message')
@@ -243,12 +324,20 @@ export class MessagesService {
     if (type) {
       qb.andWhere('message.type = :type', { type });
     }
+    if (priority) {
+      qb.andWhere('message.priority = :priority', { priority });
+    }
 
     if (sort === 'supports') {
       qb.orderBy('message.supportCount', 'DESC').addOrderBy(
         'message.createdAt',
         'DESC',
       );
+    } else if (sort === 'priority') {
+      qb.orderBy(
+        `CASE message.priority WHEN '${MessagePriority.URGENTE}' THEN 1 WHEN '${MessagePriority.HAUTE}' THEN 2 ELSE 3 END`,
+        'ASC',
+      ).addOrderBy('message.createdAt', 'DESC');
     } else {
       qb.orderBy('message.createdAt', 'DESC');
     }
@@ -266,7 +355,7 @@ export class MessagesService {
     };
   }
 
-  // F49 : Mise à jour de statut avec création automatique de notification pour l'auteur
+  // F49 & F80 : Mise à jour de statut et priorité avec traçabilité et notification
   async updateStatus(
     id: number,
     dto: UpdateMessageStatusDto,
@@ -287,13 +376,35 @@ export class MessagesService {
       }
 
       const previousStatus = message.status;
-      message.status = dto.status;
+      const previousPriority = message.priority;
+
+      if (dto.status) {
+        message.status = dto.status;
+      }
+      if (dto.priority) {
+        message.priority = dto.priority;
+      }
+
       const saved = await messageRepo.save(message);
+
+      const statusChanged = dto.status && previousStatus !== dto.status;
+      const priorityChanged = dto.priority && previousPriority !== dto.priority;
+
+      let historyNote = dto.note ?? null;
+      if (!historyNote) {
+        if (statusChanged && priorityChanged) {
+          historyNote = `Statut changé en ${dto.status}, priorité changée en ${dto.priority}`;
+        } else if (statusChanged) {
+          historyNote = `Statut changé en ${dto.status}`;
+        } else if (priorityChanged) {
+          historyNote = `Priorité changée en ${dto.priority}`;
+        }
+      }
 
       const historyEntry = historyRepo.create({
         message: saved,
-        status: dto.status,
-        note: dto.note ?? null,
+        status: saved.status,
+        note: historyNote,
         changedBy: changedById ? ({ id: changedById } as User) : null,
       });
       await historyRepo.save(historyEntry);
@@ -301,12 +412,12 @@ export class MessagesService {
       if (!saved.history) saved.history = [];
       saved.history.push(historyEntry);
 
-      // F49 : Notification automatique envoyée à l'habitant
-      if (message.author && previousStatus !== dto.status) {
+      // F49 : Notification automatique envoyée à l'habitant si statut modifié
+      if (message.author && statusChanged) {
         const notif = notifRepo.create({
           user: message.author,
           type: NotificationType.DEMANDE_STATUT,
-          title: `Votre demande ${saved.reference ?? `#${saved.id}`} est passée à l'état : ${dto.status.replace('_', ' ')}`,
+          title: `Votre demande ${saved.reference ?? `#${saved.id}`} est passée à l'état : ${dto.status!.replace('_', ' ')}`,
           link: `/messages/mine/${saved.id}`,
         });
         await notifRepo.save(notif);
@@ -321,13 +432,80 @@ export class MessagesService {
         details: {
           reference: saved.reference,
           previousStatus,
-          newStatus: dto.status,
-          note: dto.note ?? null,
+          newStatus: saved.status,
+          previousPriority,
+          newPriority: saved.priority,
+          note: historyNote,
         },
         author: changedByUser,
       });
 
       return this.toPublic(saved);
+    });
+  }
+
+  // F84 : POST /agent/messages/:id/reply (agent, admin)
+  // Réponse écrite visible par le citoyen dans la chronologie + notification
+  async reply(
+    id: number,
+    responseBody: string,
+    agentId: number,
+  ): Promise<PublicMessage> {
+    if (!responseBody || !responseBody.trim()) {
+      throw new BadRequestException('Le contenu de la réponse est obligatoire');
+    }
+
+    return await this.dataSource.transaction(async (manager) => {
+      const messageRepo = manager.getRepository(CitizenMessage);
+      const historyRepo = manager.getRepository(MessageStatusHistory);
+      const notifRepo = manager.getRepository(Notification);
+
+      const message = await messageRepo.findOne({
+        where: { id },
+        relations: { author: true, history: { changedBy: true } },
+      });
+
+      if (!message) {
+        throw new NotFoundException('Message non trouvé');
+      }
+
+      const agent = await manager.getRepository(User).findOne({ where: { id: agentId } });
+
+      const replyHistory = historyRepo.create({
+        message,
+        status: message.status,
+        note: `Réponse de l'agent : ${responseBody.trim()}`,
+        changedBy: agent ? ({ id: agentId, firstName: agent.firstName, lastName: agent.lastName } as User) : null,
+      });
+      await historyRepo.save(replyHistory);
+
+      if (!message.history) message.history = [];
+      message.history.push(replyHistory);
+
+      // Notification citoyen
+      if (message.author) {
+        const notif = notifRepo.create({
+          user: message.author,
+          type: NotificationType.DEMANDE_STATUT,
+          title: `Nouvelle réponse d'un agent pour votre demande ${message.reference ?? `#${message.id}`}`,
+          link: `/messages/mine/${message.id}`,
+        });
+        await notifRepo.save(notif);
+      }
+
+      // Audit log
+      await this.auditService.log({
+        action: 'message_replied',
+        entityType: 'CitizenMessage',
+        entityId: String(message.id),
+        details: {
+          reference: message.reference,
+          reply: responseBody.trim(),
+        },
+        author: agent,
+      });
+
+      return this.toPublic(message);
     });
   }
 
@@ -424,6 +602,8 @@ export class MessagesService {
       district: message.district,
       preciseLocation: message.preciseLocation,
       status: message.status,
+      priority: message.priority,
+      isMedicalEmergency: message.isMedicalEmergency,
       supportCount: message.supportCount || 0,
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,

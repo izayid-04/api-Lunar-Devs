@@ -95,3 +95,47 @@ Ce document décrit l'ensemble des mesures de renforcement de sécurité mises e
   - Durée de session de 8 heures (`expiresIn: '8h'`) permettant le confort d'évaluation pour le jury et les agents tout en limitant la fenêtre d'exposition en cas de compromission de jeton.
 - **Comment la vérifier** :
   - Se connecter via `POST /auth/login` et décoder le JWT retourné (ex. via `jwt.decode` ou inspecteur de token) : le champ `exp - iat` vaut exactement 28 800 secondes (8 heures).
+
+---
+
+## 8. Cache mémoire de 60 secondes sur les lectures publiques (F77)
+- **Ce qu'elle protège** :
+  - Protège la base de données et les ressources de l'application contre les pics de charge et les attaques par déni de service (DDoS) sur les consultations de données statiques ou peu volatiles.
+  - Endpoints couverts : `/services`, `/announcements`, `/alerts/active`, `/transports`, `/partners`, `/projects`.
+  - Durée : 60 secondes en mémoire (`HttpCacheInterceptor`).
+  - En-tête HTTP retourné : `X-Cache: HIT` avec `X-Cache-Age: Xs` lors d'un coup réussi, et `X-Cache: MISS` lors de la mise en cache initiale.
+- **Comment la vérifier** :
+  - Effectuer deux requêtes successives sur `GET /services` : la première produit `X-Cache: MISS`, la seconde renvoie instantanément `X-Cache: HIT`.
+
+---
+
+## 9. Compression des réponses HTTP (F78)
+- **Ce qu'elle protège** :
+  - Réduit la consommation de bande passante et accélère le temps de transfert des données vers les clients (`gzip` / `deflate` via `compression`).
+  - Protège l'infrastructure réseau contre la saturation par de gros flux de données JSON.
+- **Comment la vérifier** :
+  - Lancer une requête avec l'en-tête `Accept-Encoding: gzip` :
+    ```bash
+    curl -H "Accept-Encoding: gzip" -I http://localhost:3000/services
+    ```
+  - Vérifier la présence de l'en-tête `Content-Encoding: gzip`.
+
+---
+
+## 10. Piège Honeypot et protection anti-spam (F81 & F82)
+- **Ce qu'elle protège** :
+  - **Champ piège `website` (F81)** : accepté par les formulaires publics (`messages`, `ideas`, `feedback`, `register`). Si un robot malveillant remplit ce champ invisible, l'API renvoie un code 201 factice sans rien enregistrer en base de données.
+  - **Déduplication anti-spam (F82)** : un message identique (même auteur, même contenu) envoyé moins de 60 secondes après le précédent est immédiatement refusé avec une erreur `409 Conflict`.
+  - **Rate limit renforcé** : limitation stricte à 5 soumissions par minute par adresse IP sur les formulaires de dépôt public.
+- **Comment la vérifier** :
+  - Tenter de renvoyer le même message dans la minute : l'API répond `409 Conflict`.
+  - Envoyer un formulaire avec `"website": "http://spam.bot"` : l'API renvoie `201 Created` sans créer d'enregistrement.
+
+---
+
+## 11. Gestion des urgences médicales et priorisation (F80 & F86)
+- **Ce qu'elle protège** :
+  - **Priorité paramétrable (F80)** : `normale`, `haute`, `urgente` filtrable et triable par les agents municipaux (`?sort=priority`).
+  - **Urgence médicale automatique (F86)** : lorsqu'un citoyen coche l'urgence médicale, la priorité est automatiquement assignée à `"urgente"`, une alerte immédiate est transmise à tous les agents et administrateurs, et la réponse HTTP inclut les consignes d'urgence vitales (appel 15 / SAMU).
+- **Comment la vérifier** :
+  - Créer un message avec `"isMedicalEmergency": true` : constater le statut `201`, la priorité `urgente`, la présence de `emergencyInstructions` et la notification reçue par les agents.

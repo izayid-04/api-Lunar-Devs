@@ -6,6 +6,7 @@ import {
   Patch,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ServicesService } from './services.service.js';
 import { UpdateServiceAvailabilityDto } from './dto/update-service-availability.dto.js';
@@ -15,8 +16,10 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { UserRole } from '../users/user-role.enum.js';
+import { HttpCacheInterceptor } from '../common/http-cache.interceptor.js';
 
 @Controller('services')
+@UseInterceptors(HttpCacheInterceptor)
 export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 

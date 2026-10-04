@@ -72,4 +72,13 @@ export class CreateMessageDto {
   @IsString()
   @MaxLength(255)
   preciseLocation?: string;
+
+  // F81 : Honeypot anti-spam
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  // F86 : Urgence médicale
+  @IsOptional()
+  isMedicalEmergency?: boolean;
 }

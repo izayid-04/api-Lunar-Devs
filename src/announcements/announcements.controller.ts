@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
@@ -19,8 +20,10 @@ import { UserRole } from '../users/user-role.enum.js';
 import { AnnouncementsService } from './announcements.service.js';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto.js';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto.js';
+import { HttpCacheInterceptor } from '../common/http-cache.interceptor.js';
 
 @Controller('announcements')
+@UseInterceptors(HttpCacheInterceptor)
 export class AnnouncementsController {
   constructor(private readonly announcementsService: AnnouncementsService) {}
 

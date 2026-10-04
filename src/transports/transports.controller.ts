@@ -6,6 +6,7 @@ import {
   Patch,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { TransportsService } from './transports.service.js';
 import { ListTransportsQueryDto, UpdateTransportStatusDto } from './dto/transports.dto.js';
@@ -15,8 +16,10 @@ import { Roles } from '../auth/roles.decorator.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { UserRole } from '../users/user-role.enum.js';
 import { UsersService } from '../users/users.service.js';
+import { HttpCacheInterceptor } from '../common/http-cache.interceptor.js';
 
 @Controller('transports')
+@UseInterceptors(HttpCacheInterceptor)
 export class TransportsController {
   constructor(
     private readonly transportsService: TransportsService,

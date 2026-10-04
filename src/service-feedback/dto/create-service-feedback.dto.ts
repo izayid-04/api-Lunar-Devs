@@ -9,4 +9,9 @@ export class CreateServiceFeedbackDto {
   @IsString()
   @IsOptional()
   comment?: string;
+
+  // F81 : Honeypot anti-spam
+  @IsOptional()
+  @IsString()
+  website?: string;
 }

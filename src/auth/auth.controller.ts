@@ -29,7 +29,7 @@ export class AuthController {
 
   @Post('auth/register')
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 reg/min per IP
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 reg/min per IP (F81)
   register(@Body() dto: RegisterDto, @Req() req: Request) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || '';

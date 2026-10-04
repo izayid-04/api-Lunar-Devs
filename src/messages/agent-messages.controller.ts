@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { UserRole } from '../users/user-role.enum.js';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto.js';
 import { UpdateMessageStatusDto } from './dto/update-message-status.dto.js';
+import { ReplyMessageDto } from './dto/reply-message.dto.js';
 import { MessagesService } from './messages.service.js';
 
 @Controller('agent/messages')
@@ -29,6 +31,7 @@ export class AgentMessagesController {
       query.status,
       query.type,
       query.sort,
+      query.priority,
     );
   }
 
@@ -39,5 +42,14 @@ export class AgentMessagesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.messagesService.updateStatus(id, dto, user.sub);
+  }
+
+  @Post(':id/reply')
+  reply(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReplyMessageDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.messagesService.reply(id, dto.message, user.sub);
   }
 }

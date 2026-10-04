@@ -14,6 +14,8 @@ import { MessageType } from '../message-type.enum.js';
 import { MessageStatusHistory } from './message-status-history.entity.js';
 import { MessageSupport } from './message-support.entity.js';
 
+import { MessagePriority } from '../message-priority.enum.js';
+
 @Entity({ name: 'citizen_messages' })
 export class CitizenMessage {
   @PrimaryGeneratedColumn()
@@ -56,6 +58,18 @@ export class CitizenMessage {
 
   @Column({ type: 'enum', enum: MessageStatus, default: MessageStatus.NOUVEAU })
   status!: MessageStatus;
+
+  // F80 : Priorité (normale, haute, urgente)
+  @Column({
+    type: 'enum',
+    enum: MessagePriority,
+    default: MessagePriority.NORMALE,
+  })
+  priority!: MessagePriority;
+
+  // F86 : Urgence médicale
+  @Column({ name: 'is_medical_emergency', type: 'boolean', default: false })
+  isMedicalEmergency!: boolean;
 
   // F52 : Nombre de soutiens reçus
   @Column({ name: 'support_count', type: 'int', default: 0 })

@@ -10,12 +10,16 @@ import { CreateIdeaDto } from './dto/create-idea.dto.js';
 import { JwtAuthGuard, type AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+
 @Controller('ideas')
 @UseGuards(JwtAuthGuard)
 export class IdeasController {
   constructor(private readonly participationService: ParticipationService) {}
 
   @Post()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5/min (F81)
   async submitIdea(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateIdeaDto,

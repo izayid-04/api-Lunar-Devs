@@ -10,6 +10,8 @@ import { CreateServiceFeedbackDto } from './dto/create-service-feedback.dto.js';
 import { JwtAuthGuard, type AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+
 @Controller('services')
 export class ServiceFeedbackController {
   constructor(
@@ -17,7 +19,8 @@ export class ServiceFeedbackController {
   ) {}
 
   @Post(':id/feedback')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5/min (F81)
   async postFeedback(
     @Param('id') idOrSlug: string,
     @CurrentUser() user: AuthenticatedUser,

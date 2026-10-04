@@ -37,6 +37,24 @@ export class ServiceFeedbackService {
       throw new NotFoundException(`Service ${serviceIdOrSlug} not found`);
     }
 
+    // F81 : Honeypot anti-spam
+    if (dto.website && dto.website.trim().length > 0) {
+      return {
+        message: 'Avis enregistré avec succès',
+        reference: `AVIS-${service.id}-SPAM`,
+        feedback: {
+          id: Math.floor(100000 + Math.random() * 900000),
+          reference: `AVIS-${service.id}-SPAM`,
+          serviceId: service.id,
+          citizenId,
+          rating: dto.rating,
+          comment: dto.comment ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+    }
+
     let existing = await this.feedbackRepository.findOne({
       where: { serviceId: service.id, citizenId },
     });

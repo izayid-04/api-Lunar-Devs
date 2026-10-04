@@ -174,6 +174,23 @@ export class ParticipationService {
     const rand = Math.floor(1000 + Math.random() * 9000);
     const reference = `IDEE-${dateStr}-${rand}`;
 
+    // F81 : Honeypot anti-spam
+    if (dto.website && dto.website.trim().length > 0) {
+      return {
+        id: Math.floor(100000 + Math.random() * 900000),
+        reference,
+        title: dto.title,
+        description: dto.description,
+        district: dto.district || null,
+        status: IdeaStatus.SOUMISE,
+        adminNote: null,
+        citizenId,
+        citizen: null as any,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+
     const idea = this.ideaRepository.create({
       reference,
       title: dto.title,

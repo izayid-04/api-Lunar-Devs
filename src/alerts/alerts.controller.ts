@@ -11,6 +11,7 @@ import {
   Post,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtService } from '@nestjs/jwt';
@@ -25,8 +26,10 @@ import { AlertsAiService } from './alerts-ai.service.js';
 import { CreateAlertDto } from './dto/create-alert.dto.js';
 import { UpdateAlertDto } from './dto/update-alert.dto.js';
 import { AiRecommendationDto } from './dto/ai-recommendation.dto.js';
+import { HttpCacheInterceptor } from '../common/http-cache.interceptor.js';
 
 @Controller('alerts')
+@UseInterceptors(HttpCacheInterceptor)
 export class AlertsController {
   constructor(
     private readonly alertsService: AlertsService,

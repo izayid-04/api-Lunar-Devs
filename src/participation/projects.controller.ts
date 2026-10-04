@@ -6,13 +6,16 @@ import {
   Body,
   ParseIntPipe,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ParticipationService } from './participation.service.js';
 import { PostConsultationResponseDto } from './dto/post-consultation-response.dto.js';
 import { JwtAuthGuard, type AuthenticatedUser } from '../auth/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
+import { HttpCacheInterceptor } from '../common/http-cache.interceptor.js';
 
 @Controller()
+@UseInterceptors(HttpCacheInterceptor)
 export class ProjectsController {
   constructor(private readonly participationService: ParticipationService) {}
 

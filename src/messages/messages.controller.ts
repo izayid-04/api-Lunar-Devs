@@ -18,6 +18,8 @@ import { UserRole } from '../users/user-role.enum.js';
 import { CreateMessageDto } from './dto/create-message.dto.js';
 import { MessagesService } from './messages.service.js';
 
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+
 @Controller('messages')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.CITIZEN)
@@ -25,6 +27,8 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Post()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10/min pour permettre la suite de tests et sécuriser les formulaires
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateMessageDto,

@@ -41,6 +41,23 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto, ip = 'unknown', userAgent = ''): Promise<SafeUser> {
+    // F81 : Honeypot anti-spam
+    if (dto.website && dto.website.trim().length > 0) {
+      return {
+        id: String(Math.floor(100000 + Math.random() * 900000)),
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        role: UserRole.CITIZEN,
+        isActive: true,
+        district: null,
+        preferredLanguage: null,
+        isVulnerable: false,
+        profileCompleted: false,
+        createdAt: new Date(),
+      };
+    }
+
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
       throw new ConflictException('Email already in use');

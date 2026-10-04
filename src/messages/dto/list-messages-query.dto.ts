@@ -2,6 +2,8 @@ import { IsEnum, IsIn, IsOptional } from 'class-validator';
 import { MessageStatus } from '../message-status.enum.js';
 import { MessageType } from '../message-type.enum.js';
 
+import { MessagePriority } from '../message-priority.enum.js';
+
 export class ListMessagesQueryDto {
   @IsOptional()
   @IsEnum(MessageStatus)
@@ -12,8 +14,12 @@ export class ListMessagesQueryDto {
   type?: MessageType;
 
   @IsOptional()
-  @IsIn(['recent', 'supports'], {
-    message: 'sort doit être parmi : recent, supports',
+  @IsEnum(MessagePriority)
+  priority?: MessagePriority;
+
+  @IsOptional()
+  @IsIn(['recent', 'supports', 'priority'], {
+    message: 'sort doit être parmi : recent, supports, priority',
   })
-  sort?: 'recent' | 'supports';
+  sort?: 'recent' | 'supports' | 'priority';
 }

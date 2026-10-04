@@ -372,8 +372,8 @@ async function run() {
     headers: authH(citizenToken),
     body: {
       type: 'signalement',
-      subject: '[TEST] Test smoke test automated',
-      body: 'Ceci est un test automatisé de bon fonctionnement du signalement.',
+      subject: `[TEST] Test smoke test automated ${Date.now()}`,
+      body: `Ceci est un test automatisé de bon fonctionnement du signalement ${Date.now()}`,
       category: 'voirie',
       district: 'Centre-Ville',
       preciseLocation: 'Place Centrale',
@@ -381,6 +381,52 @@ async function run() {
   });
   record('POST /messages', 'citoyen création signalement (201)', 201, rPostMsg.status);
   const createdMsgId = rPostMsg.data?.id;
+
+  // Test F82 : Refuser un message identique envoyé moins de 60s après
+  const duplicateBody = `Message identique deduplication test ${Date.now()}`;
+  const rFirstMsg = await request('/messages', {
+    method: 'POST',
+    headers: authH(citizenToken),
+    body: {
+      type: 'signalement',
+      subject: '[TEST] Premier envoi',
+      body: duplicateBody,
+      category: 'voirie',
+      district: 'Centre-Ville',
+      preciseLocation: 'Rue Test',
+    },
+  });
+  record('POST /messages', 'premier message envoyé (201)', 201, rFirstMsg.status);
+
+  const rDuplicateMsg = await request('/messages', {
+    method: 'POST',
+    headers: authH(citizenToken),
+    body: {
+      type: 'signalement',
+      subject: '[TEST] Second envoi identique',
+      body: duplicateBody,
+      category: 'voirie',
+      district: 'Centre-Ville',
+      preciseLocation: 'Rue Test',
+    },
+  });
+  record('POST /messages', 'message identique < 60s refusé (409) (F82)', 409, rDuplicateMsg.status);
+
+  // Test F81 : Champ piège "website" rempli -> réponse 201 factice sans enregistrement
+  const rHoneypotMsg = await request('/messages', {
+    method: 'POST',
+    headers: authH(citizenToken),
+    body: {
+      type: 'signalement',
+      subject: '[SPAM] Piège honeypot',
+      body: 'Texte généré par un bot de spam',
+      category: 'voirie',
+      district: 'Centre-Ville',
+      preciseLocation: 'Internet',
+      website: 'http://spam-bot-trap.com',
+    },
+  });
+  record('POST /messages', 'piège honeypot -> retour 201 factice (F81)', 201, rHoneypotMsg.status);
 
   const rPostMsgAgent = await request('/messages', {
     method: 'POST',
@@ -423,13 +469,62 @@ async function run() {
   record('GET /agent/messages', 'citoyen refusé (403)', 403, rAgentMsgsCit.status);
 
   if (createdMsgId) {
+    // F80 : modification de la priorité par l'agent
+    const rUpdatePriority = await request(`/agent/messages/${createdMsgId}/status`, {
+      method: 'PATCH',
+      headers: authH(agentToken),
+      body: { priority: 'haute', note: '[TEST] Priorité passée à haute' },
+    });
+    record('PATCH /agent/messages/:id/status', 'agent modification priorité (200) (F80)', 200, rUpdatePriority.status);
+    record('PATCH /agent/messages/:id/status', 'priorité mise à jour en haute (F80)', 'haute', rUpdatePriority.data?.priority);
+
     const rUpdateStatus = await request(`/agent/messages/${createdMsgId}/status`, {
       method: 'PATCH',
       headers: authH(agentToken),
       body: { status: 'en_cours', note: '[TEST] Prise en charge smoke test' },
     });
-    record('PATCH /agent/messages/:id/status', 'agent mise à jour (200)', 200, rUpdateStatus.status);
+    record('PATCH /agent/messages/:id/status', 'agent mise à jour statut (200)', 200, rUpdateStatus.status);
+
+    // F84 : POST /agent/messages/:id/reply
+    const rReply = await request(`/agent/messages/${createdMsgId}/reply`, {
+      method: 'POST',
+      headers: authH(agentToken),
+      body: { message: 'Bonjour, nos services municipaux interviennent sur place.' },
+    });
+    record('POST /agent/messages/:id/reply', 'agent réponse écrite (201 ou 200) (F84)', true, [200, 201].includes(rReply.status));
+    const historyEntries = rReply.data?.history || [];
+    const hasAgentReply = historyEntries.some(h => h.note && h.note.includes("Réponse de l'agent"));
+    record('POST /agent/messages/:id/reply', 'réponse visible dans la chronologie (F84)', true, hasAgentReply);
+
+    // Vérifier notification pour le citoyen suite à la réponse de l'agent
+    const rNotifsReply = await request('/notifications', { headers: authH(citizenToken) });
+    const hasReplyNotif = Array.isArray(rNotifsReply.data) && rNotifsReply.data.some(n => n.title && n.title.includes("Nouvelle réponse d'un agent"));
+    record('POST /agent/messages/:id/reply', 'notification citoyen générée (F84)', true, hasReplyNotif);
   }
+
+  // F86 : Urgence médicale
+  const rMedicalEmergency = await request('/messages', {
+    method: 'POST',
+    headers: authH(citizenToken),
+    body: {
+      type: 'signalement',
+      subject: '[TEST URGENCE] Chute grave sur la voie publique',
+      body: 'Besoin urgent de secours pour une personne inconsciente.',
+      category: 'autre',
+      district: 'Centre-Ville',
+      preciseLocation: 'Devant la gare',
+      isMedicalEmergency: true,
+    },
+  });
+  record('POST /messages', 'urgence médicale créée (201) (F86)', 201, rMedicalEmergency.status);
+  record('POST /messages', 'urgence médicale -> priorité "urgente" automatique (F86)', 'urgente', rMedicalEmergency.data?.priority);
+  record('POST /messages', 'urgence médicale -> consignes d urgence dans la réponse (F86)', true, Boolean(rMedicalEmergency.data?.emergencyInstructions && rMedicalEmergency.data.emergencyInstructions.includes('15')));
+
+  // F80 : Tri par priorité
+  const rAgentSortPriority = await request('/agent/messages?sort=priority', { headers: authH(agentToken) });
+  record('GET /agent/messages?sort=priority', 'tri par priorité (200) (F80)', 200, rAgentSortPriority.status);
+  const firstMsgInSorted = rAgentSortPriority.data?.messages?.[0];
+  record('GET /agent/messages?sort=priority', 'premier message a priorité urgente (F80)', 'urgente', firstMsgInSorted?.priority);
 
   // 8. Dashboard Agent & Webcup
   console.log(`\n--- Dashboard Agent & Webcup ---`);
@@ -600,6 +695,20 @@ async function run() {
     });
     record('PATCH /agent/privacy/inquiries/:id/status', 'agent réponse (200)', 200, rUpdatePrivacy.status);
   }
+
+  // 16. Performance & Optimisations (F77, F78)
+  console.log(`\n--- Performance & Optimisations (F77, F78) ---`);
+  // Vérifier le cache mémoire sur les lectures publiques avec une clé unique pour tester MISS puis HIT
+  const cacheTestKey = `test=${Date.now()}`;
+  const rCache1 = await fetch(`${baseUrl}/services?${cacheTestKey}`);
+  const rCache2 = await fetch(`${baseUrl}/services?${cacheTestKey}`);
+  record('GET /services', 'premier appel sans cache (X-Cache MISS) (F77)', 'MISS', rCache1.headers.get('x-cache'));
+  record('GET /services', 'deuxième appel avec cache (X-Cache HIT) (F77)', 'HIT', rCache2.headers.get('x-cache'));
+
+  // Vérifier la compression gzip
+  const rGzip = await fetch(`${baseUrl}/services`, { headers: { 'Accept-Encoding': 'gzip' } });
+  const hasGzip = rGzip.headers.get('content-encoding') === 'gzip';
+  record('GET /services', 'compression gzip active (F78)', true, hasGzip);
 
   // --- RECAPITULATIF SOUS FORME DE TABLEAU ---
   console.log(`\n======================================================`);

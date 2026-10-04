@@ -14,4 +14,9 @@ export class CreateIdeaDto {
   @IsOptional()
   @MaxLength(100)
   district?: string;
+
+  // F81 : Honeypot anti-spam
+  @IsOptional()
+  @IsString()
+  website?: string;
 }
